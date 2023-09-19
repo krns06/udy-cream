@@ -5,7 +5,13 @@ mod tests {
     const TEST_DIR: &str = "rv64-tests/share/riscv-tests/isa/";
 
     fn test_exec_program(filename: &str, end_point: u64, addrres: usize, value: u64) {
-        let mut rv64sg_emulator = Rv64SGEmulator::load_from_filename(0, 4096, 1024 * 1024 * 4, &format!("{}{}", TEST_DIR, filename)).unwrap();        
+        let mut rv64sg_emulator = Rv64SGEmulator::load_from_filename(
+            0,
+            4096,
+            1024 * 1024 * 4,
+            &format!("{}{}", TEST_DIR, filename),
+        )
+        .unwrap();
 
         rv64sg_emulator.exec_program(end_point);
         assert!(rv64sg_emulator.load_memory_64bit(addrres).unwrap() == value);
@@ -65,5 +71,22 @@ mod tests {
         test_exec_program("rv64ui-p-sw.bin", 0x4c, 0x1000, 1);
         test_exec_program("rv64ui-p-xor.bin", 0x4c, 0x1000, 1);
         test_exec_program("rv64ui-p-xori.bin", 0x4c, 0x1000, 1);
+    }
+
+    #[test]
+    fn rv64um_p_all() {
+        test_exec_program("rv64um-p-div.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-divu.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-divuw.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-divw.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-mul.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-mulh.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-mulhsu.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-mulhu.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-mulw.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-rem.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-remu.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-remuw.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64um-p-remw.bin", 0x4c, 0x1000, 1);
     }
 }

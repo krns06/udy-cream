@@ -70,8 +70,8 @@ pub fn extend_sign_16bit(value: u64) -> u64 {
     (value + 0x7FFFFFFFFFFF8000) ^ 0x7fffffffffff8000
 }
 
-pub fn extend_sign_21bit (value: u64) -> u64 {
-      (value + 0x7FFFFFFFFFF00000) ^ 0x7FFFFFFFFFF00000
+pub fn extend_sign_21bit(value: u64) -> u64 {
+    (value + 0x7FFFFFFFFFF00000) ^ 0x7FFFFFFFFFF00000
 }
 
 pub fn extend_sign_32bit(value: u64) -> u64 {
@@ -94,4 +94,9 @@ pub fn truncate_top_16bit(value: u64) -> u64 {
 
 pub fn truncate_top_8bit(value: u64) -> u64 {
     value & 0xff
+}
+
+// Rv64m
+pub fn extend_sign_128bit(value: u64) -> u128 {
+    (value as u128 + 0x7fffffffffffffff8000000000000000) ^ 0x7fffffffffffffff8000000000000000
 }

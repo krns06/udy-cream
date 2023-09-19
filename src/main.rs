@@ -7,7 +7,7 @@ fn main() {
         0,
         4096,
         1024 * 1024 * 4,
-        "rv64-tests/share/riscv-tests/isa/rv64ui-p-xori.bin",
+        "rv64-tests/share/riscv-tests/isa/rv64um-p-remw.bin",
     )
     .unwrap();
     rv64sg_emulator.exec_program(0x4c);

@@ -1,5 +1,5 @@
-mod helpers;
 mod emulator_tests;
+mod helpers;
 
 use std::{
     fs::File,
@@ -7,7 +7,13 @@ use std::{
     process::exit,
 };
 
-use self::helpers::{extract_rd, extend_sign_21bit, extract_funct3, extract_rs1, extract_imm_11_0, extract_csr, extract_rs2, extend_sign_13bit, extract_offset_12_10_5_4_1_11, extract_imm_31_12, extend_sign_32bit, extract_zimm, extend_sign_12bit, truncate_top_32bit, extract_shamt, extract_offset_11_5_4_0, truncate_top_16bit, extract_offset_11_0, extend_sign_16bit, extend_sign_8bit, truncate_top_8bit, extend_sign_n};
+use self::helpers::{
+    extend_sign_128bit, extend_sign_12bit, extend_sign_13bit, extend_sign_16bit, extend_sign_21bit,
+    extend_sign_32bit, extend_sign_8bit, extend_sign_n, extract_csr, extract_funct3,
+    extract_imm_11_0, extract_imm_31_12, extract_offset_11_0, extract_offset_11_5_4_0,
+    extract_offset_12_10_5_4_1_11, extract_rd, extract_rs1, extract_rs2, extract_shamt,
+    extract_zimm, truncate_top_16bit, truncate_top_32bit, truncate_top_8bit,
+};
 
 pub struct Rv64SGEmulator {
     memory: Vec<u8>,
@@ -91,7 +97,10 @@ impl Rv64SGEmulator {
                 1 => match instruction[3] >> 2 {
                     0 => self.slli(&instruction),
                     b_26_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 26-31bit: {:x}", 0x13, 1, b_26_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 26-31bit: {:x}",
+                            0x13, 1, b_26_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
@@ -102,7 +111,10 @@ impl Rv64SGEmulator {
                     0 => self.srli(&instruction),
                     0x10 => self.srai(&instruction),
                     b_26_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 26-31bit: {:x}", 0x13, 5, b_26_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 26-31bit: {:x}",
+                            0x13, 5, b_26_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
@@ -119,7 +131,10 @@ impl Rv64SGEmulator {
                 1 => match instruction[3] >> 2 {
                     0 => self.slliw(&instruction),
                     b_26_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 26-31bit: {:x}", 0x1b, 1, b_26_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 26-31bit: {:x}",
+                            0x1b, 1, b_26_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
@@ -127,7 +142,10 @@ impl Rv64SGEmulator {
                     0 => self.srliw(&instruction),
                     0x10 => self.sraiw(&instruction),
                     b_26_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 26-31bit: {:x}", 0x1b, 5, b_26_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 26-31bit: {:x}",
+                            0x1b, 5, b_26_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
@@ -149,59 +167,91 @@ impl Rv64SGEmulator {
             0x33 => match extract_funct3(&instruction) {
                 0 => match instruction[3] >> 1 {
                     0 => self.add(&instruction),
+                    1 => self.mul(&instruction),
                     0x20 => self.sub(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x33, 0, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x33, 0, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
                 1 => match instruction[3] >> 1 {
                     0 => self.sll(&instruction),
+                    1 => self.mulh(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x33, 1, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x33, 1, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
                 2 => match instruction[3] >> 1 {
                     0 => self.slt(&instruction),
+                    1 => self.mulhsu(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x33, 2, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x33, 2, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
                 3 => match instruction[3] >> 1 {
                     0 => self.sltu(&instruction),
+                    1 => self.mulhu(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x33, 3, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x33, 3, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
                 4 => match instruction[3] >> 1 {
                     0 => self.xor(&instruction),
+                    1 => self.div(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x33, 3, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x33, 4, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
                 5 => match instruction[3] >> 1 {
                     0 => self.srl(&instruction),
+                    1 => self.divu(&instruction),
                     0x20 => self.sra(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x33, 5, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x33, 5, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
                 6 => match instruction[3] >> 1 {
                     0 => self.or(&instruction),
+                    1 => self.rem(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x33, 6, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x33, 6, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
                 7 => match instruction[3] >> 1 {
                     0 => self.and(&instruction),
+                    1 => self.remu(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x33, 7, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x33, 7, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
@@ -214,24 +264,65 @@ impl Rv64SGEmulator {
             0x3b => match extract_funct3(&instruction) {
                 0 => match instruction[3] >> 1 {
                     0 => self.addw(&instruction),
+                    1 => self.mulw(&instruction),
                     0x20 => self.subw(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x3b, 0, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x3b, 0, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
                 1 => match instruction[3] >> 1 {
                     0 => self.sllw(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x3b, 1, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x3b, 1, b_25_31
+                        ));
+                        self.set_exception_cause(2)
+                    }
+                },
+                4 => match instruction[3] >> 1 {
+                    1 => self.divw(&instruction),
+                    b_25_31 => {
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x3b, 4, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
                 5 => match instruction[3] >> 1 {
                     0 => self.srlw(&instruction),
+                    1 => self.divuw(&instruction),
                     0x20 => self.sraw(&instruction),
                     b_25_31 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} 25-31bit: {:x}", 0x3b, 5, b_25_31));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x3b, 5, b_25_31
+                        ));
+                        self.set_exception_cause(2)
+                    }
+                },
+                6 => match instruction[3] >> 1 {
+                    1 => self.remw(&instruction),
+                    b_25_31 => {
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x3b, 6, b_25_31
+                        ));
+                        self.set_exception_cause(2)
+                    }
+                },
+                7 => match instruction[3] >> 1 {
+                    1 => self.remuw(&instruction),
+                    b_25_31 => {
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 25-31bit: {:x}",
+                            0x3b, 7, b_25_31
+                        ));
                         self.set_exception_cause(2)
                     }
                 },
@@ -260,14 +351,22 @@ impl Rv64SGEmulator {
                 }
             },
             0x73 => match extract_funct3(&instruction) {
-                0 => match (instruction[0], instruction[1], instruction[2], instruction[3]) {
+                0 => match (
+                    instruction[0],
+                    instruction[1],
+                    instruction[2],
+                    instruction[3],
+                ) {
                     (0x73, 0, 0, 0) => self.ecall(&instruction),
                     (0x73, 0, 0x20, 0x30) => self.mret(&instruction),
-                    inst => { 
-                        print_not_implement(format!("op: {:x} funct3: {:x} inst: {:?}", 0x73, 0, inst));
+                    inst => {
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} inst: {:?}",
+                            0x73, 0, inst
+                        ));
                         self.set_exception_cause(2)
                     }
-                }
+                },
                 1 => self.csrrw(&instruction),
                 2 => self.csrrs(&instruction),
                 5 => self.csrrwi(&instruction),
@@ -314,7 +413,7 @@ impl Rv64SGEmulator {
             }
 
             if self.is_exit(end_point) {
-            println!("0x1000: {:x}", self.memory[0x1000]);
+                println!("0x1000: {:x}", self.memory[0x1000]);
                 return;
             }
         }
@@ -355,15 +454,29 @@ impl Rv64SGEmulator {
             self.set_exception_cause(5)?;
         }
 
-        Some((self.memory[offset] as u64) + ((self.memory[offset + 1] as u64) << 8) + ((self.memory[offset + 2] as u64) << 16) + ((self.memory[offset + 3] as u64) << 24))
+        Some(
+            (self.memory[offset] as u64)
+                + ((self.memory[offset + 1] as u64) << 8)
+                + ((self.memory[offset + 2] as u64) << 16)
+                + ((self.memory[offset + 3] as u64) << 24),
+        )
     }
-    
+
     fn load_memory_64bit(&mut self, offset: usize) -> Option<u64> {
         if self.is_over_memory(offset, 8) {
             self.set_exception_cause(5)?;
         }
 
-        Some((self.memory[offset] as u64) + ((self.memory[offset + 1] as u64) << 8) + ((self.memory[offset + 2] as u64) << 16) + ((self.memory[offset + 3] as u64) << 24) + ((self.memory[offset + 4] as u64) << 32) + ((self.memory[offset + 5] as u64) << 40) + ((self.memory[offset + 6]  as u64) << 48) + ((self.memory[offset + 7] as u64) << 56))
+        Some(
+            (self.memory[offset] as u64)
+                + ((self.memory[offset + 1] as u64) << 8)
+                + ((self.memory[offset + 2] as u64) << 16)
+                + ((self.memory[offset + 3] as u64) << 24)
+                + ((self.memory[offset + 4] as u64) << 32)
+                + ((self.memory[offset + 5] as u64) << 40)
+                + ((self.memory[offset + 6] as u64) << 48)
+                + ((self.memory[offset + 7] as u64) << 56),
+        )
     }
 
     fn save_memory_8bit(&mut self, offset: usize, value: u64) -> Option<()> {
@@ -421,7 +534,9 @@ impl Rv64SGEmulator {
         let offset = extend_sign_12bit(extract_offset_11_0(instruction));
 
         if rd != 0 {
-            self.registers[rd] = extend_sign_8bit((self.load_memory_8bit(self.registers[rs1].wrapping_add(offset) as usize)?));
+            self.registers[rd] = extend_sign_8bit(
+                (self.load_memory_8bit(self.registers[rs1].wrapping_add(offset) as usize)?),
+            );
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -433,31 +548,36 @@ impl Rv64SGEmulator {
         let offset = extend_sign_12bit(extract_offset_11_0(instruction));
 
         if rd != 0 {
-           self.registers[rd] = extend_sign_16bit(self.load_memory_16bit(self.registers[rs1].wrapping_add(offset) as usize)?);
+            self.registers[rd] = extend_sign_16bit(
+                self.load_memory_16bit(self.registers[rs1].wrapping_add(offset) as usize)?,
+            );
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
-    
+
     fn lw(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rs1 = extract_rs1(instruction);
         let offset = extend_sign_12bit(extract_offset_11_0(instruction));
 
         if rd != 0 {
-            self.registers[rd] = extend_sign_32bit(self.load_memory_32bit(self.registers[rs1].wrapping_add(offset) as usize)?);
+            self.registers[rd] = extend_sign_32bit(
+                self.load_memory_32bit(self.registers[rs1].wrapping_add(offset) as usize)?,
+            );
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
-    
+
     fn ld(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rs1 = extract_rs1(instruction);
         let offset = extend_sign_12bit(extract_offset_11_0(instruction));
 
         if rd != 0 {
-            self.registers[rd] = self.load_memory_64bit(self.registers[rs1].wrapping_add(offset) as usize)?;
+            self.registers[rd] =
+                self.load_memory_64bit(self.registers[rs1].wrapping_add(offset) as usize)?;
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -469,7 +589,8 @@ impl Rv64SGEmulator {
         let offset = extend_sign_12bit(extract_offset_11_0(instruction));
 
         if rd != 0 {
-            self.registers[rd] = self.load_memory_8bit(self.registers[rs1].wrapping_add(offset) as usize)?;
+            self.registers[rd] =
+                self.load_memory_8bit(self.registers[rs1].wrapping_add(offset) as usize)?;
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -481,7 +602,8 @@ impl Rv64SGEmulator {
         let offset = extend_sign_12bit(extract_imm_11_0(instruction));
 
         if rd != 0 {
-            self.registers[rd] = self.load_memory_16bit(self.registers[rs1].wrapping_add(offset) as usize)?;
+            self.registers[rd] =
+                self.load_memory_16bit(self.registers[rs1].wrapping_add(offset) as usize)?;
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -493,7 +615,8 @@ impl Rv64SGEmulator {
         let offset = extend_sign_12bit(extract_offset_11_0(instruction));
 
         if rd != 0 {
-            self.registers[rd] = self.load_memory_32bit(self.registers[rs1].wrapping_add(offset) as usize)?;
+            self.registers[rd] =
+                self.load_memory_32bit(self.registers[rs1].wrapping_add(offset) as usize)?;
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -523,7 +646,7 @@ impl Rv64SGEmulator {
         let rd = extract_rd(instruction);
         let rs1 = extract_rs1(instruction);
         let shamt = extract_shamt(instruction);
-        
+
         if rd != 0 {
             self.registers[rd] = self.registers[rs1] >> shamt;
         }
@@ -566,7 +689,7 @@ impl Rv64SGEmulator {
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
-    
+
     fn sra(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rs1 = extract_rs1(instruction);
@@ -581,15 +704,15 @@ impl Rv64SGEmulator {
     }
 
     fn or(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let rs1 = extract_rs1(instruction);
-       let rs2 = extract_rs2(instruction);
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
 
-       if rd != 0 {
-           self.registers[rd] = self.registers[rs1] | self.registers[rs2];
-       }
+        if rd != 0 {
+            self.registers[rd] = self.registers[rs1] | self.registers[rs2];
+        }
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn slli(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -650,17 +773,17 @@ impl Rv64SGEmulator {
     }
 
     fn andi(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let rs1 = extract_rs1(instruction);
-       let imm = extend_sign_12bit(extract_imm_11_0(instruction));
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let imm = extend_sign_12bit(extract_imm_11_0(instruction));
 
-       if rd != 0 {
-           self.registers[rd] = self.registers[rs1] & imm;
-       }
+        if rd != 0 {
+            self.registers[rd] = self.registers[rs1] & imm;
+        }
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
     }
-    
+
     fn ori(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rs1 = extract_rs1(instruction);
@@ -674,38 +797,40 @@ impl Rv64SGEmulator {
     }
 
     fn auipc(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let imm = extend_sign_32bit(extract_imm_31_12(instruction));
+        let rd = extract_rd(instruction);
+        let imm = extend_sign_32bit(extract_imm_31_12(instruction));
 
-       if rd != 0 {
-           self.registers[rd] = self.pc.wrapping_add(imm);
-       }
+        if rd != 0 {
+            self.registers[rd] = self.pc.wrapping_add(imm);
+        }
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
     }
-    
+
     fn addiw(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rs1 = extract_rs1(instruction);
         let imm = extend_sign_12bit(extract_imm_11_0(instruction));
 
         if rd != 0 {
-            self.registers[rd] = extend_sign_32bit(truncate_top_32bit(self.registers[rs1].wrapping_add(imm)));
+            self.registers[rd] =
+                extend_sign_32bit(truncate_top_32bit(self.registers[rs1].wrapping_add(imm)));
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn slliw(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let rs1 = extract_rs1(instruction);
-       let shamt = extract_shamt(instruction);
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let shamt = extract_shamt(instruction);
 
-       if rd != 0 {
-           self.registers[rd] = extend_sign_32bit(truncate_top_32bit(self.registers[rs1] << shamt));
-       }
+        if rd != 0 {
+            self.registers[rd] =
+                extend_sign_32bit(truncate_top_32bit(self.registers[rs1] << shamt));
+        }
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn srliw(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -714,7 +839,8 @@ impl Rv64SGEmulator {
         let shamt = extract_shamt(instruction);
 
         if rd != 0 {
-            self.registers[rd] = extend_sign_32bit(truncate_top_32bit(self.registers[rs1]) >> shamt);
+            self.registers[rd] =
+                extend_sign_32bit(truncate_top_32bit(self.registers[rs1]) >> shamt);
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -726,7 +852,8 @@ impl Rv64SGEmulator {
         let shamt = extract_shamt(instruction);
 
         if rd != 0 {
-            self.registers[rd] = extend_sign_n(truncate_top_32bit(self.registers[rs1]) >> shamt, 31 - shamt);
+            self.registers[rd] =
+                extend_sign_n(truncate_top_32bit(self.registers[rs1]) >> shamt, 31 - shamt);
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -738,7 +865,9 @@ impl Rv64SGEmulator {
         let rs2 = extract_rs2(instruction);
 
         if rd != 0 {
-            self.registers[rd] = extend_sign_32bit(truncate_top_32bit(self.registers[rs1].wrapping_add(self.registers[rs2])));
+            self.registers[rd] = extend_sign_32bit(truncate_top_32bit(
+                self.registers[rs1].wrapping_add(self.registers[rs2]),
+            ));
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -750,7 +879,9 @@ impl Rv64SGEmulator {
         let rs2 = extract_rs2(instruction);
 
         if rd != 0 {
-            self.registers[rd] = extend_sign_32bit(truncate_top_32bit(self.registers[rs1].wrapping_sub(self.registers[rs2])));
+            self.registers[rd] = extend_sign_32bit(truncate_top_32bit(
+                self.registers[rs1].wrapping_sub(self.registers[rs2]),
+            ));
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -762,7 +893,9 @@ impl Rv64SGEmulator {
         let rs2 = extract_rs2(instruction);
 
         if rd != 0 {
-            self.registers[rd] = extend_sign_32bit(truncate_top_32bit(self.registers[rs1] << (self.registers[rs2] & 0x1f)));
+            self.registers[rd] = extend_sign_32bit(truncate_top_32bit(
+                self.registers[rs1] << (self.registers[rs2] & 0x1f),
+            ));
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -774,7 +907,9 @@ impl Rv64SGEmulator {
         let rs2 = extract_rs2(instruction);
 
         if rd != 0 {
-            self.registers[rd] = extend_sign_32bit(truncate_top_32bit(self.registers[rs1]) >> (self.registers[rs2] & 0x1f));
+            self.registers[rd] = extend_sign_32bit(
+                truncate_top_32bit(self.registers[rs1]) >> (self.registers[rs2] & 0x1f),
+            );
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -787,7 +922,8 @@ impl Rv64SGEmulator {
 
         if rd != 0 {
             let shift = self.registers[rs2] & 0x1f;
-            self.registers[rd] = extend_sign_n(truncate_top_32bit(self.registers[rs1]) >> shift, 31 - shift);
+            self.registers[rd] =
+                extend_sign_n(truncate_top_32bit(self.registers[rs1]) >> shift, 31 - shift);
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
@@ -798,7 +934,10 @@ impl Rv64SGEmulator {
         let rs2 = extract_rs2(instruction);
         let offset = extend_sign_12bit(extract_offset_11_5_4_0(instruction));
 
-        self.save_memory_8bit(self.registers[rs1].wrapping_add(offset) as usize, self.registers[rs2])?;
+        self.save_memory_8bit(
+            self.registers[rs1].wrapping_add(offset) as usize,
+            self.registers[rs2],
+        )?;
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
@@ -807,7 +946,10 @@ impl Rv64SGEmulator {
         let rs2 = extract_rs2(instruction);
         let offset = extend_sign_12bit(extract_offset_11_5_4_0(instruction));
 
-        self.save_memory_16bit(self.registers[rs1].wrapping_add(offset) as usize, truncate_top_16bit(self.registers[rs2]))?;
+        self.save_memory_16bit(
+            self.registers[rs1].wrapping_add(offset) as usize,
+            truncate_top_16bit(self.registers[rs2]),
+        )?;
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
@@ -816,8 +958,11 @@ impl Rv64SGEmulator {
         let rs2 = extract_rs2(instruction);
         let offset = extend_sign_12bit(extract_offset_11_5_4_0(instruction));
 
-       self.save_memory_32bit(self.registers[rs1].wrapping_add(offset) as usize, self.registers[rs2])?;
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.save_memory_32bit(
+            self.registers[rs1].wrapping_add(offset) as usize,
+            self.registers[rs2],
+        )?;
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn sd(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -825,7 +970,10 @@ impl Rv64SGEmulator {
         let rs2 = extract_rs2(instruction);
         let offset = extend_sign_12bit(extract_offset_11_5_4_0(instruction));
 
-        self.save_memory_64bit(self.registers[rs1].wrapping_add(offset) as usize, self.registers[rs2])?;
+        self.save_memory_64bit(
+            self.registers[rs1].wrapping_add(offset) as usize,
+            self.registers[rs2],
+        )?;
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
@@ -854,32 +1002,32 @@ impl Rv64SGEmulator {
     }
 
     fn sll(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let rs1 = extract_rs1(instruction);
-       let rs2 = extract_rs2(instruction);
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
 
-       if rd != 0 {
-           self.registers[rd] = self.registers[rs1] << (self.registers[rs2] & 0x3f);
-       }
+        if rd != 0 {
+            self.registers[rd] = self.registers[rs1] << (self.registers[rs2] & 0x3f);
+        }
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn slt(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let rs1 = extract_rs1(instruction);
-       let rs2 = extract_rs2(instruction);
-       let flag = self.registers[rs1].wrapping_sub(self.registers[rs2]);
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+        let flag = self.registers[rs1].wrapping_sub(self.registers[rs2]);
 
-       if rd != 0 {
-           if (flag >> 63) == 1 {
-               self.registers[rd] = 1;
-           } else {
-               self.registers[rd] = 0;
-           }
-       }
+        if rd != 0 {
+            if (flag >> 63) == 1 {
+                self.registers[rd] = 1;
+            } else {
+                self.registers[rd] = 0;
+            }
+        }
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn sltu(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -962,14 +1110,14 @@ impl Rv64SGEmulator {
     }
 
     fn lui(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let imm = extend_sign_32bit(extract_imm_31_12(instruction));
+        let rd = extract_rd(instruction);
+        let imm = extend_sign_32bit(extract_imm_31_12(instruction));
 
-       if rd != 0 {
-           self.registers[rd] = imm;
-       }
+        if rd != 0 {
+            self.registers[rd] = imm;
+        }
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn beq(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -983,17 +1131,17 @@ impl Rv64SGEmulator {
             self.progress_pc(self.pc.wrapping_add(4))
         }
     }
-    
-    fn bne(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rs1 = extract_rs1(instruction);
-       let rs2 = extract_rs2(instruction);
-       let offset = extend_sign_13bit(extract_offset_12_10_5_4_1_11(instruction));
 
-       if self.registers[rs1] != self.registers[rs2] {
-           self.progress_pc(self.pc.wrapping_add(offset))
-       } else {
-           self.progress_pc(self.pc.wrapping_add(4))
-       }
+    fn bne(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+        let offset = extend_sign_13bit(extract_offset_12_10_5_4_1_11(instruction));
+
+        if self.registers[rs1] != self.registers[rs2] {
+            self.progress_pc(self.pc.wrapping_add(offset))
+        } else {
+            self.progress_pc(self.pc.wrapping_add(4))
+        }
     }
 
     fn blt(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -1045,12 +1193,12 @@ impl Rv64SGEmulator {
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
-    
-    fn csrrs(&mut self, instruction: &Vec<u8>) -> Option<()> { 
+
+    fn csrrs(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rs1 = extract_rs1(instruction);
         let rv_csr = extract_csr(instruction);
-    
+
         let t = self.read_csr(rv_csr)?;
         self.write_csr(rv_csr, t | self.registers[rs1])?;
 
@@ -1092,6 +1240,214 @@ impl Rv64SGEmulator {
     }
 }
 
+//Rv64m
+impl Rv64SGEmulator {
+    fn mul(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = self.registers[rs1].wrapping_mul(self.registers[rs2]);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn mulh(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = (extend_sign_128bit(self.registers[rs1])
+                .wrapping_mul(extend_sign_128bit(self.registers[rs2]))
+                >> 64) as u64;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn mulhsu(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = (extend_sign_128bit(self.registers[rs1])
+                .wrapping_mul(self.registers[rs2] as u128)
+                >> 64) as u64;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn mulhu(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = ((self.registers[rs1] as u128)
+                .wrapping_mul(self.registers[rs2] as u128)
+                >> 64) as u64;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn div(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = if self.registers[rs2] != 0 {
+                (self.registers[rs1] as i64).wrapping_div(self.registers[rs2] as i64) as u64
+            } else {
+                u64::MAX
+            };
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn divu(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = if self.registers[rs2] != 0 {
+                self.registers[rs1].wrapping_div(self.registers[rs2])
+            } else {
+                u64::MAX
+            };
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn rem(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = if self.registers[rs2] != 0 {
+                (self.registers[rs1] as i64).wrapping_rem(self.registers[rs2] as i64) as u64
+            } else {
+                self.registers[rs1]
+            };
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn remu(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = if self.registers[rs2] != 0 {
+                self.registers[rs1].wrapping_rem(self.registers[rs2])
+            } else {
+                self.registers[rs1]
+            };
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn mulw(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(truncate_top_32bit(
+                self.registers[rs1].wrapping_mul(self.registers[rs2]),
+            ));
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn divw(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = if truncate_top_32bit(self.registers[rs2]) != 0 {
+                (self.registers[rs1] as i32).wrapping_div(self.registers[rs2] as i32) as u64
+            } else {
+                u64::MAX
+            };
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn divuw(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = if truncate_top_32bit(self.registers[rs2]) != 0 {
+                extend_sign_32bit(
+                    truncate_top_32bit(self.registers[rs1])
+                        .wrapping_div(truncate_top_32bit(self.registers[rs2])),
+                )
+            } else {
+                u64::MAX
+            }
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn remw(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = if truncate_top_32bit(self.registers[rs2]) != 0 {
+                (truncate_top_32bit(self.registers[rs1]) as i32)
+                    .wrapping_rem(truncate_top_32bit(self.registers[rs2]) as i32)
+                    as u64
+            } else {
+                self.registers[rs1]
+            }
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn remuw(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = if truncate_top_32bit(self.registers[rs2]) != 0 {
+                extend_sign_32bit(
+                    truncate_top_32bit(self.registers[rs1])
+                        .wrapping_rem(truncate_top_32bit(self.registers[rs2])),
+                )
+            } else {
+                self.registers[rs1]
+            };
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+}
+
+// CSR系
 #[derive(PartialEq, Clone, Copy)]
 pub enum MachineMode {
     U = 0,
@@ -1105,7 +1461,7 @@ impl MachineMode {
             0 => Some(Self::U),
             1 => Some(Self::S),
             3 => Some(Self::M),
-            _ => None
+            _ => None,
         }
     }
 
@@ -1133,7 +1489,10 @@ pub struct CsrStatus {
 
 impl CsrStatus {
     fn from_usize(mode: &MachineMode, rv_csr: usize) -> Option<Self> {
-        let mut res = CsrStatus { readable: false, writreable: false };
+        let mut res = CsrStatus {
+            readable: false,
+            writreable: false,
+        };
         if mode.to_usize() < (rv_csr & 0x300) >> 8 {
             return None;
         }
@@ -1164,14 +1523,14 @@ impl Rv64SGEmulator {
         }
 
         match rv_csr {
-            rv_csr => Some(self.csrs[rv_csr])
+            rv_csr => Some(self.csrs[rv_csr]),
         }
     }
 
     fn write_csr(&mut self, rv_csr: usize, value: u64) -> Option<()> {
         let csr_status = CsrStatus::from_usize(&self.mode, rv_csr).unwrap();
 
-        if !csr_status.writreable && rv_csr >= self.csrs.len(){
+        if !csr_status.writreable && rv_csr >= self.csrs.len() {
             self.set_exception_cause(2)?;
         }
 
@@ -1179,26 +1538,26 @@ impl Rv64SGEmulator {
             M_STATUS => {
                 self.csrs[rv_csr] = value & 0x8000003f007fffea;
                 Some(())
-            },
+            }
             M_EDELEG => {
                 self.csrs[M_EDELEG] = value & 0xffff0000ff00bbff;
                 Some(())
             }
             M_TVEC => {
-				if !((value & 0x3) > 1) {
+                if !((value & 0x3) > 1) {
                     self.csrs[M_TVEC] = value;
                 }
 
                 Some(())
-            },
-			M_EPC => {
+            }
+            M_EPC => {
                 self.csrs[M_EPC] = value & 0xfffffffffffffffe;
                 Some(())
-            },
+            }
             rv_csr => {
                 self.csrs[rv_csr] = value;
                 Some(())
-            },
+            }
         }
     }
 
@@ -1226,21 +1585,26 @@ impl Rv64SGEmulator {
         match self.mode {
             MachineMode::M => {
                 self.write_csr(M_EPC, self.pc).unwrap();
-                
+
                 let mtvec = self.read_csr(M_TVEC).unwrap();
                 let mut mstatus = self.read_csr(M_STATUS).unwrap() & 0xffffffffffffe6ff;
                 mstatus = (mstatus & 0xffffffffffffff77) | ((mstatus & 0x8) << 4);
-                mstatus = mstatus | ((current_mode as u64) << 11) | (((((current_mode.to_usize() + 1) & 0x2) >> 1) as u64) << 8);
+                mstatus = mstatus
+                    | ((current_mode as u64) << 11)
+                    | (((((current_mode.to_usize() + 1) & 0x2) >> 1) as u64) << 8);
 
                 self.write_csr(M_STATUS, mstatus).unwrap();
 
                 if mtvec & 0x3 == 1 && mcause >> 63 == 1 {
-                    self.progress_pc((mtvec & 0xfffffffffffffffc) + 4 * (mcause & 0x7fffffffffffffff)).unwrap();
+                    self.progress_pc(
+                        (mtvec & 0xfffffffffffffffc) + 4 * (mcause & 0x7fffffffffffffff),
+                    )
+                    .unwrap();
                 } else {
                     self.progress_pc(mtvec & 0xfffffffffffffffc);
                 }
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
 }
