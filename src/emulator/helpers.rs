@@ -1,3 +1,5 @@
+use softfloat_wrapper::{RoundingMode, ExceptionFlags};
+
 // Rv64i &
 pub fn extract_rd(instruction: &Vec<u8>) -> usize {
     (((instruction[1] & 0xf) << 1) + ((instruction[0] & 0x80) >> 7)) as usize
@@ -100,3 +102,72 @@ pub fn truncate_top_8bit(value: u64) -> u64 {
 pub fn extend_sign_128bit(value: u64) -> u128 {
     (value as u128 + 0x7fffffffffffffff8000000000000000) ^ 0x7fffffffffffffff8000000000000000
 }
+
+// Rv64d
+pub fn extract_funct7(instruction: &Vec<u8>) -> usize {
+    (instruction[3] as usize) >> 1
+}
+
+pub fn extract_rm(instruction: &Vec<u8>, frm: u64) -> usize{
+    let rm = extract_funct3(instruction);
+
+    if rm == 7 {
+        frm as usize
+    } else {
+        rm
+    }
+}
+
+pub fn rm_to_swrm(rm: usize) -> Option<RoundingMode> {
+    match rm {
+        0 => Some(RoundingMode::TiesToEven),
+        1 => Some(RoundingMode::TowardZero),
+        2 => Some(RoundingMode::TowardNegative),
+        3 => Some(RoundingMode::TowardPositive),
+        4 => Some(RoundingMode::TiesToAway),
+        _ => None,
+    }
+}
+
+pub fn swef_to_fflags(swef: ExceptionFlags) -> u64 {
+    let mut fflags = 0;
+
+    if swef.is_inexact() {
+        fflags |= 0b1;
+    }
+
+    if swef.is_underflow() {
+        fflags |= 0b10;
+    }
+
+    if swef.is_overflow() {
+        fflags |= 0b100;
+    }
+
+    if swef.is_infinite() {
+        fflags |= 0b1000;
+    }
+
+    if swef.is_invalid() {
+        fflags |= 0b10000;
+    }
+
+    fflags
+}
+
+pub fn nan_boxing(value: u64) -> u64 {
+    value | 0xffffffff00000000
+}
+
+pub fn extract_rs3(instruction: &Vec<u8>) -> usize {
+    ((instruction[3] & 0xf8) >> 3) as usize
+}
+
+pub fn is_nan_boxing(value: u64) -> bool {
+    if (value >> 32) == 0xffffffff {
+        true
+    } else {
+        false
+    }
+}
+

@@ -89,4 +89,20 @@ mod tests {
         test_exec_program("rv64um-p-remuw.bin", 0x4c, 0x1000, 1);
         test_exec_program("rv64um-p-remw.bin", 0x4c, 0x1000, 1);
     }
+
+    #[test]
+    fn rv64ud_p_all() {
+        test_exec_program("rv64ud-p-fadd.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ud-p-fclass.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ud-p-fcmp.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ud-p-fcvt.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ud-p-fcvt_w.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ud-p-fdiv.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ud-p-fmadd.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ud-p-fmin.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ud-p-ldst.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ud-p-move.bin", 0x4c, 0x2000, 1);
+        test_exec_program("rv64ud-p-recoding.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ud-p-structural.bin", 0x4c, 0x1000, 1);
+    }
 }
