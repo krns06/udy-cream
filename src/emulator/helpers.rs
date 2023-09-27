@@ -1,4 +1,4 @@
-use softfloat_wrapper::{RoundingMode, ExceptionFlags};
+use softfloat_wrapper::{ExceptionFlags, RoundingMode};
 
 // Rv64i &
 pub fn extract_rd(instruction: &Vec<u8>) -> usize {
@@ -103,12 +103,12 @@ pub fn extend_sign_128bit(value: u64) -> u128 {
     (value as u128 + 0x7fffffffffffffff8000000000000000) ^ 0x7fffffffffffffff8000000000000000
 }
 
-// Rv64d
+// Rv64 f + d
 pub fn extract_funct7(instruction: &Vec<u8>) -> usize {
     (instruction[3] as usize) >> 1
 }
 
-pub fn extract_rm(instruction: &Vec<u8>, frm: u64) -> usize{
+pub fn extract_rm(instruction: &Vec<u8>, frm: u64) -> usize {
     let rm = extract_funct3(instruction);
 
     if rm == 7 {
@@ -170,4 +170,3 @@ pub fn is_nan_boxing(value: u64) -> bool {
         false
     }
 }
-

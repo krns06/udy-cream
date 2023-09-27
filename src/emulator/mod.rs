@@ -4,17 +4,19 @@ mod helpers;
 use std::{
     fs::File,
     io::{self, Read},
+    os::fd::IntoRawFd,
     process::exit,
 };
 
-use softfloat_wrapper::{ExceptionFlags, F64, Float, F32};
+use softfloat_wrapper::{ExceptionFlags, Float, F32, F64};
 
 use self::helpers::{
     extend_sign_128bit, extend_sign_12bit, extend_sign_13bit, extend_sign_16bit, extend_sign_21bit,
     extend_sign_32bit, extend_sign_8bit, extend_sign_n, extract_csr, extract_funct3,
-    extract_imm_11_0, extract_imm_31_12, extract_offset_11_0, extract_offset_11_5_4_0,
-    extract_offset_12_10_5_4_1_11, extract_rd, extract_rs1, extract_rs2, extract_shamt,
-    extract_zimm, truncate_top_16bit, truncate_top_32bit, truncate_top_8bit, extract_funct7, extract_rm, rm_to_swrm, swef_to_fflags, nan_boxing, extract_rs3, is_nan_boxing,
+    extract_funct7, extract_imm_11_0, extract_imm_31_12, extract_offset_11_0,
+    extract_offset_11_5_4_0, extract_offset_12_10_5_4_1_11, extract_rd, extract_rm, extract_rs1,
+    extract_rs2, extract_rs3, extract_shamt, extract_zimm, is_nan_boxing, nan_boxing, rm_to_swrm,
+    swef_to_fflags, truncate_top_16bit, truncate_top_32bit, truncate_top_8bit,
 };
 
 pub struct Rv64SGEmulator {
@@ -350,6 +352,7 @@ impl Rv64SGEmulator {
                 }
             },
             0x43 => match (instruction[3] & 0x6) >> 1 {
+                0 => self.f_madd_s(&instruction),
                 1 => self.f_madd_d(&instruction),
                 b_25_26 => {
                     print_not_implement(format!("op: {:x} 25-26bit: {:x}", 0x43, b_25_26));
@@ -357,6 +360,7 @@ impl Rv64SGEmulator {
                 }
             },
             0x47 => match (instruction[3] & 0x6) >> 1 {
+                0 => self.f_msub_s(&instruction),
                 1 => self.f_msub_d(&instruction),
                 b_25_26 => {
                     print_not_implement(format!("op: {:x} 25-26bit: {:x}", 0x47, b_25_26));
@@ -364,6 +368,7 @@ impl Rv64SGEmulator {
                 }
             },
             0x4b => match (instruction[3] & 0x6) >> 1 {
+                0 => self.f_nmsub_s(&instruction),
                 1 => self.f_nmsub_d(&instruction),
                 b_25_26 => {
                     print_not_implement(format!("op: {:x} 25-26bit: {:x}", 0x4b, b_25_26));
@@ -371,6 +376,7 @@ impl Rv64SGEmulator {
                 }
             },
             0x4f => match (instruction[3] & 0x6) >> 1 {
+                0 => self.f_nmadd_s(&instruction),
                 1 => self.f_nmadd_d(&instruction),
                 b_25_26 => {
                     print_not_implement(format!("op: {:x} 25-26bit: {:x}", 0x4f, b_25_26));
@@ -380,70 +386,123 @@ impl Rv64SGEmulator {
             0x53 => match extract_funct7(&instruction) {
                 0 => self.f_add_s(&instruction),
                 1 => self.f_add_d(&instruction),
+                4 => self.f_sub_s(&instruction),
                 5 => self.f_sub_d(&instruction),
                 8 => self.f_mul_s(&instruction),
                 9 => self.f_mul_d(&instruction),
                 0xd => self.f_div_d(&instruction),
                 0x10 => match extract_funct3(&instruction) {
                     0 => self.f_sgnj_s(&instruction),
+                    1 => self.f_sgnjn_s(&instruction),
+                    2 => self.f_sgnjx_s(&instruction),
                     funct3 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} funct7: {:x}", 0x53, funct3, 0x10));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} funct7: {:x}",
+                            0x53, funct3, 0x10
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 0x11 => match extract_funct3(&instruction) {
                     0 => self.f_sgnj_d(&instruction),
                     1 => self.f_sgnjn_d(&instruction),
                     2 => self.f_sgnjx_d(&instruction),
                     funct3 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} funct7: {:x}", 0x53, funct3, 0x11));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} funct7: {:x}",
+                            0x53, funct3, 0x11
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
+                },
+                0x14 => match extract_funct3(&instruction) {
+                    0 => self.f_min_s(&instruction),
+                    1 => self.f_max_s(&instruction),
+                    funct3 => {
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} funct7: {:x}",
+                            0x53, funct3, 0x14
+                        ));
+                        self.set_exception_cause(2)
+                    }
                 },
                 0x15 => match extract_funct3(&instruction) {
                     0 => self.f_min_d(&instruction),
                     1 => self.f_max_d(&instruction),
                     funct3 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} funct7: {:x}", 0x53, funct3, 0x15));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} funct7: {:x}",
+                            0x53, funct3, 0x15
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 0x20 => match extract_rs2(&instruction) {
                     1 => self.f_cvt_s_d(&instruction),
                     rs2 => {
-                        print_not_implement(format!("op: {:x} rs2: {:x} funct7: {:x}", 0x53, 0x20, rs2));
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct7: {:x}",
+                            0x53, 0x20, rs2
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 0x21 => match extract_rs2(&instruction) {
                     0 => self.f_cvt_d_s(&instruction),
                     rs2 => {
-                        print_not_implement(format!("op: {:x} rs2: {:x} funct7: {:x}", 0x53, 0x21, rs2));
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct7: {:x}",
+                            0x53, 0x21, rs2
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 0x2d => match extract_rs2(&instruction) {
                     0 => self.f_sqrt_d(&instruction),
                     rs2 => {
-                        print_not_implement(format!("op: {:x} rs2: {:x} funct7: {:x}", 0x53, 0x2d, rs2));
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct7: {:x}",
+                            0x53, 0x2d, rs2
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 0x50 => match extract_funct3(&instruction) {
+                    0 => self.f_le_s(&instruction),
+                    1 => self.f_lt_s(&instruction),
                     2 => self.f_eq_s(&instruction),
                     funct3 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} funct7: {:x}", 0x53, funct3, 0x50));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} funct7: {:x}",
+                            0x53, funct3, 0x50
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 0x51 => match extract_funct3(&instruction) {
                     0 => self.f_le_d(&instruction),
                     1 => self.f_lt_d(&instruction),
                     2 => self.f_eq_d(&instruction),
                     funct3 => {
-                        print_not_implement(format!("op: {:x} funct3: {:x} funct7: {:x}", 0x53, funct3, 0x51));
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} funct7: {:x}",
+                            0x53, funct3, 0x51
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
+                },
+                0x60 => match extract_rs2(&instruction) {
+                    0 => self.f_cvt_w_s(&instruction),
+                    1 => self.f_cvt_wu_s(&instruction),
+                    2 => self.f_cvt_l_s(&instruction),
+                    3 => self.f_cvt_lu_s(&instruction),
+                    rs2 => {
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct7: {:x}",
+                            0x53, rs2, 0x60
+                        ));
+                        self.set_exception_cause(2)
+                    }
                 },
                 0x61 => match extract_rs2(&instruction) {
                     0 => self.f_cvt_w_d(&instruction),
@@ -451,9 +510,25 @@ impl Rv64SGEmulator {
                     2 => self.f_cvt_l_d(&instruction),
                     3 => self.f_cvt_lu_d(&instruction),
                     rs2 => {
-                        print_not_implement(format!("op: {:x} rs2: {:x} funct7: {:x}", 0x53, rs2, 0x61));
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct7: {:x}",
+                            0x53, rs2, 0x61
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
+                },
+                0x68 => match extract_rs2(&instruction) {
+                    0 => self.f_cvt_s_w(&instruction),
+                    1 => self.f_cvt_s_wu(&instruction),
+                    2 => self.f_cvt_s_l(&instruction),
+                    3 => self.f_cvt_s_lu(&instruction),
+                    rs2 => {
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct7: {:x}",
+                            0x53, rs2, 0x68
+                        ));
+                        self.set_exception_cause(2)
+                    }
                 },
                 0x69 => match extract_rs2(&instruction) {
                     0 => self.f_cvt_d_w(&instruction),
@@ -461,38 +536,54 @@ impl Rv64SGEmulator {
                     2 => self.f_cvt_d_l(&instruction),
                     3 => self.f_cvt_d_lu(&instruction),
                     rs2 => {
-                        print_not_implement(format!("op: {:x} rs2: {:x} funct7: {:x}", 0x53, rs2, 0x69));
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct7: {:x}",
+                            0x53, rs2, 0x69
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 0x70 => match (extract_rs2(&instruction), extract_funct3(&instruction)) {
                     (0, 0) => self.f_mv_x_w(&instruction),
+                    (0, 1) => self.f_class_s(&instruction),
                     (rs2, funct3) => {
-                        print_not_implement(format!("op: {:x} rs2: {:x} funct3: {:x} funct7: {:x}", 0x53, rs2, funct3, 0x70));
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct3: {:x} funct7: {:x}",
+                            0x53, rs2, funct3, 0x70
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 0x71 => match (extract_rs2(&instruction), extract_funct3(&instruction)) {
                     (0, 0) => self.f_mv_x_d(&instruction),
                     (0, 1) => self.f_class_d(&instruction),
                     (rs2, funct3) => {
-                        print_not_implement(format!("op: {:x} rs2: {:x} funct3: {:x} funct7: {:x}", 0x53, rs2, funct3, 0x71));
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct3: {:x} funct7: {:x}",
+                            0x53, rs2, funct3, 0x71
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 0x78 => match (extract_rs2(&instruction), extract_funct3(&instruction)) {
                     (0, 0) => self.f_mv_w_x(&instruction),
                     (rs2, funct3) => {
-                        print_not_implement(format!("op: {:x} rs2: {:x} funct3: {:x} funct7: {:x}", 0x53, rs2, funct3, 0x78));
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct3: {:x} funct7: {:x}",
+                            0x53, rs2, funct3, 0x78
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 0x79 => match (extract_rs2(&instruction), extract_funct3(&instruction)) {
                     (0, 0) => self.f_mv_d_x(&instruction),
                     (rs2, funct3) => {
-                        print_not_implement(format!("op: {:x} rs2: {:x} funct3: {:x} funct7: {:x}", 0x53, rs2, funct3, 0x79));
+                        print_not_implement(format!(
+                            "op: {:x} rs2: {:x} funct3: {:x} funct7: {:x}",
+                            0x53, rs2, funct3, 0x79
+                        ));
                         self.set_exception_cause(2)
-                    },
+                    }
                 },
                 funct7 => {
                     print_not_implement(format!("op: {:x} funct7: {:x}", 0x53, funct7));
@@ -538,6 +629,7 @@ impl Rv64SGEmulator {
                 1 => self.csrrw(&instruction),
                 2 => self.csrrs(&instruction),
                 5 => self.csrrwi(&instruction),
+                7 => self.csrrci(&instruction),
                 funct3 => {
                     print_not_implement(format!("op: {:x} funct3: {:x}", 0x73, funct3));
                     self.set_exception_cause(2)
@@ -1390,6 +1482,21 @@ impl Rv64SGEmulator {
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
+    fn csrrci(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let zimm = extract_zimm(instruction);
+        let rv_csr = extract_csr(instruction);
+
+        let t = self.read_csr(rv_csr)?;
+        self.write_csr(rv_csr, t & (!zimm))?;
+
+        if rd != 0 {
+            self.registers[rd] = t;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
     fn jal(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(&instruction);
         let mut offset = (((instruction[3] as u64) & 0x80) << (20 - 8))
@@ -1615,14 +1722,15 @@ impl Rv64SGEmulator {
     }
 }
 
-//Rv64d
+//Rv64f + d
 impl Rv64SGEmulator {
     fn f_lw(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rs1 = extract_rs1(instruction);
         let offset = extend_sign_12bit(extract_offset_11_0(instruction));
 
-        self.f_registers[rd] = nan_boxing(self.load_memory_32bit(self.registers[rs1].wrapping_add(offset) as usize)?);
+        self.f_registers[rd] =
+            nan_boxing(self.load_memory_32bit(self.registers[rs1].wrapping_add(offset) as usize)?);
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
@@ -1632,7 +1740,8 @@ impl Rv64SGEmulator {
         let rs1 = extract_rs1(instruction);
         let offset = extend_sign_12bit(extract_offset_11_0(instruction));
 
-        self.f_registers[rd] = self.load_memory_64bit(self.registers[rs1].wrapping_add(offset) as usize)?;
+        self.f_registers[rd] =
+            self.load_memory_64bit(self.registers[rs1].wrapping_add(offset) as usize)?;
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
@@ -1642,7 +1751,10 @@ impl Rv64SGEmulator {
         let rs2 = extract_rs2(instruction);
         let offset = extend_sign_12bit(extract_offset_11_5_4_0(instruction));
 
-        self.save_memory_32bit(self.registers[rs1].wrapping_add(offset) as usize, self.f_registers[rs2]);
+        self.save_memory_32bit(
+            self.registers[rs1].wrapping_add(offset) as usize,
+            self.f_registers[rs2],
+        );
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
@@ -1652,7 +1764,10 @@ impl Rv64SGEmulator {
         let rs2 = extract_rs2(instruction);
         let offset = extend_sign_12bit(extract_offset_11_5_4_0(instruction));
 
-        self.save_memory_64bit(self.registers[rs1].wrapping_add(offset) as usize, self.f_registers[rs2])?;
+        self.save_memory_64bit(
+            self.registers[rs1].wrapping_add(offset) as usize,
+            self.f_registers[rs2],
+        )?;
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
@@ -1666,7 +1781,85 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1]).fused_mul_add(F64::from_bits(self.f_registers[rs2]), F64::from_bits(self.f_registers[rs3]), rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1])
+            .fused_mul_add(
+                F64::from_bits(self.f_registers[rs2]),
+                F64::from_bits(self.f_registers[rs3]),
+                rm_to_swrm(rm).unwrap(),
+            )
+            .to_bits();
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_madd_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+        let rs3 = extract_rs3(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        let rs1_value = if is_nan_boxing(self.f_registers[rs1]) {
+            F32::from_bits(self.f_registers[rs1] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs2_value = if is_nan_boxing(self.f_registers[rs2]) {
+            F32::from_bits(self.f_registers[rs2] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs3_value = if is_nan_boxing(self.f_registers[rs3]) {
+            F32::from_bits(self.f_registers[rs3] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        self.f_registers[rd] = nan_boxing(
+            rs1_value
+                .fused_mul_add(rs2_value, rs3_value, rm_to_swrm(rm).unwrap())
+                .to_bits() as u64,
+        );
+        flag.get();
+        let fflagsg = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflagsg | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_msub_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+        let rs3 = extract_rs3(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        let rs1_value = if is_nan_boxing(self.f_registers[rs1]) {
+            F32::from_bits(self.f_registers[rs1] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs2_value = if is_nan_boxing(self.f_registers[rs2]) {
+            F32::from_bits(self.f_registers[rs2] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs3_value = if is_nan_boxing(self.f_registers[rs3]) {
+            F32::from_bits(self.f_registers[rs3] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        self.f_registers[rd] = nan_boxing(
+            rs1_value
+                .fused_mul_add(rs2_value, rs3_value.neg(), rm_to_swrm(rm).unwrap())
+                .to_bits() as u64,
+        );
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -1675,20 +1868,63 @@ impl Rv64SGEmulator {
     }
 
     fn f_msub_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let rm = extract_rm(instruction, self.read_csr(FRM)?);
-       let rs1 = extract_rs1(instruction);
-       let rs2 = extract_rs2(instruction);
-       let rs3 = extract_rs3(instruction);
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+        let rs3 = extract_rs3(instruction);
 
-       let mut flag = ExceptionFlags::default();
-       flag.set();
-       self.f_registers[rd] = F64::from_bits(self.f_registers[rs1]).fused_mul_add(F64::from_bits(self.f_registers[rs2]), F64::from_bits(self.f_registers[rs3]).neg(), rm_to_swrm(rm).unwrap()).to_bits();
-       flag.get();
-       let fflags = self.read_csr(FFLAGS)?;
-       self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1])
+            .fused_mul_add(
+                F64::from_bits(self.f_registers[rs2]),
+                F64::from_bits(self.f_registers[rs3]).neg(),
+                rm_to_swrm(rm).unwrap(),
+            )
+            .to_bits();
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_nmsub_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+        let rs3 = extract_rs3(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        let rs1_value = if is_nan_boxing(self.f_registers[rs1]) {
+            F32::from_bits(self.f_registers[rs1] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs2_value = if is_nan_boxing(self.f_registers[rs2]) {
+            F32::from_bits(self.f_registers[rs2] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs3_value = if is_nan_boxing(self.f_registers[rs3]) {
+            F32::from_bits(self.f_registers[rs3] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        self.f_registers[rd] = nan_boxing(
+            rs1_value
+                .neg()
+                .fused_mul_add(rs2_value, rs3_value, rm_to_swrm(rm).unwrap())
+                .to_bits() as u64,
+        );
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn f_nmsub_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -1700,7 +1936,51 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1]).neg().fused_mul_add(F64::from_bits(self.f_registers[rs2]), F64::from_bits(self.f_registers[rs3]), rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1])
+            .neg()
+            .fused_mul_add(
+                F64::from_bits(self.f_registers[rs2]),
+                F64::from_bits(self.f_registers[rs3]),
+                rm_to_swrm(rm).unwrap(),
+            )
+            .to_bits();
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_nmadd_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+        let rs3 = extract_rs3(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        let rs1_value = if is_nan_boxing(self.f_registers[rs1]) {
+            F32::from_bits(self.f_registers[rs1] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs2_value = if is_nan_boxing(self.f_registers[rs2]) {
+            F32::from_bits(self.f_registers[rs2] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs3_value = if is_nan_boxing(self.f_registers[rs3]) {
+            F32::from_bits(self.f_registers[rs3] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        self.f_registers[rd] = nan_boxing(
+            rs1_value
+                .neg()
+                .fused_mul_add(rs2_value, rs3_value.neg(), rm_to_swrm(rm).unwrap())
+                .to_bits() as u64,
+        );
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -1717,7 +1997,14 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1]).neg().fused_mul_add(F64::from_bits(self.f_registers[rs2]), F64::from_bits(self.f_registers[rs3]).neg(), rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1])
+            .neg()
+            .fused_mul_add(
+                F64::from_bits(self.f_registers[rs2]),
+                F64::from_bits(self.f_registers[rs3]).neg(),
+                rm_to_swrm(rm).unwrap(),
+            )
+            .to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -1743,7 +2030,8 @@ impl Rv64SGEmulator {
         } else {
             F32::quiet_nan()
         };
-        self.f_registers[rd] = nan_boxing(rs1_value.add(rs2_value, rm_to_swrm(rm).unwrap()).to_bits() as u64);
+        self.f_registers[rd] =
+            nan_boxing(rs1_value.add(rs2_value, rm_to_swrm(rm).unwrap()).to_bits() as u64);
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -1759,11 +2047,43 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1]).add(F64::from_bits(self.f_registers[rs2]), rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1])
+            .add(
+                F64::from_bits(self.f_registers[rs2]),
+                rm_to_swrm(rm).unwrap(),
+            )
+            .to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
-        
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_sub_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        let rs1_value = if is_nan_boxing(self.f_registers[rs1]) {
+            F32::from_bits(self.f_registers[rs1] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs2_value = if is_nan_boxing(self.f_registers[rs2]) {
+            F32::from_bits(self.f_registers[rs2] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        self.f_registers[rd] =
+            nan_boxing(rs1_value.sub(rs2_value, rm_to_swrm(rm).unwrap()).to_bits() as u64);
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
@@ -1775,7 +2095,12 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1]).sub(F64::from_bits(self.f_registers[rs2]), rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1])
+            .sub(
+                F64::from_bits(self.f_registers[rs2]),
+                rm_to_swrm(rm).unwrap(),
+            )
+            .to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -1801,7 +2126,8 @@ impl Rv64SGEmulator {
         } else {
             F32::quiet_nan()
         };
-        self.f_registers[rd] = nan_boxing(rs1_value.mul(rs2_value, rm_to_swrm(rm).unwrap()).to_bits() as u64);
+        self.f_registers[rd] =
+            nan_boxing(rs1_value.mul(rs2_value, rm_to_swrm(rm).unwrap()).to_bits() as u64);
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -1817,7 +2143,12 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1]).mul(F64::from_bits(self.f_registers[rs2]), rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1])
+            .mul(
+                F64::from_bits(self.f_registers[rs2]),
+                rm_to_swrm(rm).unwrap(),
+            )
+            .to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -1825,7 +2156,7 @@ impl Rv64SGEmulator {
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
-    fn f_div_d(&mut self, instruction: &Vec<u8>) -> Option<()> { 
+    fn f_div_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rm = extract_rm(instruction, self.read_csr(FRM)?);
         let rs1 = extract_rs1(instruction);
@@ -1833,7 +2164,12 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1]).div(F64::from_bits(self.f_registers[rs2]), rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1])
+            .div(
+                F64::from_bits(self.f_registers[rs2]),
+                rm_to_swrm(rm).unwrap(),
+            )
+            .to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -1863,6 +2199,50 @@ impl Rv64SGEmulator {
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
+    fn f_sgnjn_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let mut rs1_value = F32::from_bits(if is_nan_boxing(self.f_registers[rs1]) {
+            self.f_registers[rs1] as u32
+        } else {
+            F32::quiet_nan().to_bits()
+        });
+        let rs2_value = F32::from_bits(if is_nan_boxing(self.f_registers[rs2]) {
+            self.f_registers[rs2] as u32
+        } else {
+            F32::quiet_nan().to_bits()
+        });
+        rs1_value.set_sign(rs2_value.neg().sign());
+
+        self.f_registers[rd] = nan_boxing(rs1_value.to_bits() as u64);
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_sgnjx_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let mut rs1_value = F32::from_bits(if is_nan_boxing(self.f_registers[rs1]) {
+            self.f_registers[rs1] as u32
+        } else {
+            F32::quiet_nan().to_bits()
+        });
+        let rs2_value = F32::from_bits(if is_nan_boxing(self.f_registers[rs2]) {
+            self.f_registers[rs2] as u32
+        } else {
+            F32::quiet_nan().to_bits()
+        });
+        rs1_value.set_sign(rs2_value.sign() ^ rs1_value.sign());
+
+        self.f_registers[rd] = nan_boxing(rs1_value.to_bits() as u64);
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
     fn f_sgnj_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rs1 = extract_rs1(instruction);
@@ -1876,15 +2256,15 @@ impl Rv64SGEmulator {
     }
 
     fn f_sgnjn_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let rs1 = extract_rs1(instruction);
-       let rs2 = extract_rs2(instruction);
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
 
-       let mut value = F64::from_bits(self.f_registers[rs1]);
-       value.set_sign(F64::from_bits(self.f_registers[rs2]).neg().sign());
-       self.f_registers[rd] = value.to_bits();
+        let mut value = F64::from_bits(self.f_registers[rs1]);
+        value.set_sign(F64::from_bits(self.f_registers[rs2]).neg().sign());
+        self.f_registers[rd] = value.to_bits();
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn f_sgnjx_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -1896,6 +2276,89 @@ impl Rv64SGEmulator {
         let rs2_value = F64::from_bits(self.f_registers[rs2]);
         rs1_value.set_sign(rs1_value.sign() ^ rs2_value.sign());
         self.f_registers[rd] = rs1_value.to_bits();
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_min_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let mut flag = 0;
+        let rs1_value = if is_nan_boxing(self.f_registers[rs1]) {
+            F32::from_bits(self.f_registers[rs1] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs2_value = if is_nan_boxing(self.f_registers[rs2]) {
+            F32::from_bits(self.f_registers[rs2] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+
+        if rs1_value.is_signaling_nan() || rs2_value.is_signaling_nan() {
+            flag |= 0x10;
+        }
+        self.f_registers[rd] = nan_boxing(if rs1_value.is_nan() && rs2_value.is_nan() {
+            F32::quiet_nan().to_bits() as u64
+        } else if rs1_value.is_nan() {
+            rs2_value.to_bits() as u64
+        } else if rs2_value.is_nan() {
+            rs1_value.to_bits() as u64
+        } else if (rs1_value.is_negative_zero() && rs2_value.is_positive_zero())
+            || (rs1_value.is_positive_zero() && rs2_value.is_negative_zero())
+        {
+            F32::negative_zero().to_bits() as u64
+        } else if rs1_value.lt(rs2_value) {
+            rs1_value.to_bits() as u64
+        } else {
+            rs2_value.to_bits() as u64
+        });
+
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | flag)?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_max_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let mut flag = 0;
+        let rs1_value = if is_nan_boxing(self.f_registers[rs1]) {
+            F32::from_bits(self.f_registers[rs1] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        let rs2_value = if is_nan_boxing(self.f_registers[rs2]) {
+            F32::from_bits(self.f_registers[rs2] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+        if rs1_value.is_signaling_nan() || rs2_value.is_signaling_nan() {
+            flag |= 0x10;
+        }
+        self.f_registers[rd] = nan_boxing(if rs1_value.is_nan() && rs2_value.is_nan() {
+            F32::quiet_nan().to_bits() as u64
+        } else if rs1_value.is_nan() {
+            rs2_value.to_bits() as u64
+        } else if rs2_value.is_nan() {
+            rs1_value.to_bits() as u64
+        } else if (rs1_value.is_negative_zero() && rs2_value.is_positive_zero())
+            || (rs1_value.is_positive_zero() && rs2_value.is_negative_zero())
+        {
+            F32::positive_zero().to_bits() as u64
+        } else if rs1_value.lt(rs2_value) {
+            rs2_value.to_bits() as u64
+        } else {
+            rs1_value.to_bits() as u64
+        });
+
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | flag)?;
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
@@ -1918,7 +2381,9 @@ impl Rv64SGEmulator {
             rs2_value.to_bits()
         } else if rs2_value.is_nan() {
             rs1_value.to_bits()
-        } else if (rs1_value.is_negative_zero() && rs2_value.is_positive_zero()) || (rs1_value.is_positive_zero() && rs1_value.is_negative_zero()) { 
+        } else if (rs1_value.is_negative_zero() && rs2_value.is_positive_zero())
+            || (rs1_value.is_positive_zero() && rs1_value.is_negative_zero())
+        {
             F64::negative_zero().to_bits()
         } else if rs1_value.lt(rs2_value) {
             rs1_value.to_bits()
@@ -1950,7 +2415,9 @@ impl Rv64SGEmulator {
             rs2_value.to_bits()
         } else if rs2_value.is_nan() {
             rs1_value.to_bits()
-        } else if (rs1_value.is_negative_zero() && rs2_value.is_positive_zero()) || (rs1_value.is_positive_zero() && rs2_value.is_positive_zero()) {
+        } else if (rs1_value.is_negative_zero() && rs2_value.is_positive_zero())
+            || (rs1_value.is_positive_zero() && rs2_value.is_positive_zero())
+        {
             F64::positive_zero().to_bits()
         } else if rs1_value.lt(rs2_value) {
             rs2_value.to_bits()
@@ -1970,7 +2437,11 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = nan_boxing(F64::from_bits(self.f_registers[rs1]).to_f32(rm_to_swrm(rm).unwrap()).to_bits() as u64);
+        self.f_registers[rd] = nan_boxing(
+            F64::from_bits(self.f_registers[rs1])
+                .to_f32(rm_to_swrm(rm).unwrap())
+                .to_bits() as u64,
+        );
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -1985,7 +2456,9 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F32::from_bits(self.f_registers[rs1] as u32).to_f64(rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] = F32::from_bits(self.f_registers[rs1] as u32)
+            .to_f64(rm_to_swrm(rm).unwrap())
+            .to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -2000,12 +2473,14 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1]).sqrt(rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] = F64::from_bits(self.f_registers[rs1])
+            .sqrt(rm_to_swrm(rm).unwrap())
+            .to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
 
-       self.progress_pc(self.pc.wrapping_add(4))   
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn f_eq_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -2042,6 +2517,70 @@ impl Rv64SGEmulator {
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
+    fn f_le_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            let mut flag = 0;
+            let rs1_value = if is_nan_boxing(self.f_registers[rs1]) {
+                F32::from_bits(self.f_registers[rs1] as u32)
+            } else {
+                F32::quiet_nan()
+            };
+            let rs2_value = if is_nan_boxing(self.f_registers[rs2]) {
+                F32::from_bits(self.f_registers[rs2] as u32)
+            } else {
+                F32::quiet_nan()
+            };
+            self.registers[rd] = if rs1_value.is_nan() || rs2_value.is_nan() {
+                flag |= 0x10;
+                0
+            } else if rs1_value.le(rs2_value) {
+                1
+            } else {
+                0
+            };
+            let fflags = self.read_csr(FFLAGS)?;
+            self.write_csr(FFLAGS, fflags | flag)?;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_lt_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        if rd != 0 {
+            let mut flag = 0;
+            let rs1_value = if is_nan_boxing(self.f_registers[rs1]) {
+                F32::from_bits(self.f_registers[rs1] as u32)
+            } else {
+                F32::quiet_nan()
+            };
+            let rs2_value = if is_nan_boxing(self.f_registers[rs2]) {
+                F32::from_bits(self.f_registers[rs2] as u32)
+            } else {
+                F32::quiet_nan()
+            };
+            self.registers[rd] = if rs1_value.is_nan() || rs2_value.is_nan() {
+                flag |= 0x10;
+                0
+            } else if rs1_value.lt(rs2_value) {
+                1
+            } else {
+                0
+            };
+            let fflags = self.read_csr(FFLAGS)?;
+            self.write_csr(FFLAGS, fflags | flag)?;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
     fn f_le_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rs1 = extract_rs1(instruction);
@@ -2062,32 +2601,32 @@ impl Rv64SGEmulator {
             let fflags = self.read_csr(FFLAGS)?;
             self.write_csr(FFLAGS, fflags | flag)?;
         }
-        
+
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn f_lt_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let rs1 = extract_rs1(instruction);
-       let rs2 = extract_rs2(instruction);
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
 
-       if rd != 0 {
-           let mut flag = 0;
-           let rs1_value = F64::from_bits(self.f_registers[rs1]);
-           let rs2_value = F64::from_bits(self.f_registers[rs2]);
-           self.registers[rd] = if rs1_value.is_nan() | rs2_value.is_nan() {
-               flag |= 0x10;
-               0
-           } else if rs1_value.lt(rs2_value) {
-               1
-           } else {
-               0
-           };
-           let fflags = self.read_csr(FFLAGS)?;
-           self.write_csr(FFLAGS, fflags | flag)?;
-       }
+        if rd != 0 {
+            let mut flag = 0;
+            let rs1_value = F64::from_bits(self.f_registers[rs1]);
+            let rs2_value = F64::from_bits(self.f_registers[rs2]);
+            self.registers[rd] = if rs1_value.is_nan() | rs2_value.is_nan() {
+                flag |= 0x10;
+                0
+            } else if rs1_value.lt(rs2_value) {
+                1
+            } else {
+                0
+            };
+            let fflags = self.read_csr(FFLAGS)?;
+            self.write_csr(FFLAGS, fflags | flag)?;
+        }
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn f_eq_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -2111,6 +2650,72 @@ impl Rv64SGEmulator {
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
+    fn f_cvt_w_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        self.registers[rd] = F32::from_bits(self.f_registers[rs1] as u32)
+            .to_i32(rm_to_swrm(rm).unwrap(), true) as u64;
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_cvt_wu_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        self.registers[rd] = extend_sign_32bit(
+            F32::from_bits(self.f_registers[rs1] as u32).to_u32(rm_to_swrm(rm).unwrap(), true)
+                as u64,
+        );
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_cvt_l_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        self.registers[rd] = F32::from_bits(self.f_registers[rs1] as u32)
+            .to_i64(rm_to_swrm(rm).unwrap(), true) as u64;
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_cvt_lu_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        self.registers[rd] =
+            F32::from_bits(self.f_registers[rs1] as u32).to_u64(rm_to_swrm(rm).unwrap(), true);
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
     fn f_cvt_w_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
         let rd = extract_rd(instruction);
         let rm = extract_rm(instruction, self.read_csr(FRM)?);
@@ -2119,7 +2724,8 @@ impl Rv64SGEmulator {
         if rd != 0 {
             let mut flag = ExceptionFlags::default();
             flag.set();
-            self.registers[rd] = F64::from_bits(self.f_registers[rs1]).to_i32(rm_to_swrm(rm).unwrap(), true) as u64;
+            self.registers[rd] =
+                F64::from_bits(self.f_registers[rs1]).to_i32(rm_to_swrm(rm).unwrap(), true) as u64;
             flag.get();
             let fflags = self.read_csr(FFLAGS)?;
             self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -2136,7 +2742,9 @@ impl Rv64SGEmulator {
         if rd != 0 {
             let mut flag = ExceptionFlags::default();
             flag.set();
-            self.registers[rd] = extend_sign_32bit(F64::from_bits(self.f_registers[rs1]).to_u32(rm_to_swrm(rm).unwrap(), true) as u64);
+            self.registers[rd] = extend_sign_32bit(
+                F64::from_bits(self.f_registers[rs1]).to_u32(rm_to_swrm(rm).unwrap(), true) as u64,
+            );
             flag.get();
             let fflags = self.read_csr(FFLAGS)?;
             self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -2153,7 +2761,8 @@ impl Rv64SGEmulator {
         if rd != 0 {
             let mut flag = ExceptionFlags::default();
             flag.set();
-            self.registers[rd] = F64::from_bits(self.f_registers[rs1]).to_i64(rm_to_swrm(rm).unwrap(), true) as u64;
+            self.registers[rd] =
+                F64::from_bits(self.f_registers[rs1]).to_i64(rm_to_swrm(rm).unwrap(), true) as u64;
             flag.get();
             let fflags = self.read_csr(FFLAGS)?;
             self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -2170,11 +2779,80 @@ impl Rv64SGEmulator {
         if rd != 0 {
             let mut flag = ExceptionFlags::default();
             flag.set();
-            self.registers[rd] = F64::from_bits(self.f_registers[rs1]).to_u64(rm_to_swrm(rm).unwrap(), true);
+            self.registers[rd] =
+                F64::from_bits(self.f_registers[rs1]).to_u64(rm_to_swrm(rm).unwrap(), true);
             flag.get();
             let fflags = self.read_csr(FFLAGS)?;
             self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
         }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_cvt_s_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        self.f_registers[rd] = nan_boxing(
+            F32::from_i32(self.registers[rs1] as i32, rm_to_swrm(rm).unwrap()).to_bits() as u64,
+        );
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_cvt_s_wu(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        self.f_registers[rd] = nan_boxing(
+            F32::from_u32(self.registers[rs1] as u32, rm_to_swrm(rm).unwrap()).to_bits() as u64,
+        );
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_cvt_s_l(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.get();
+        self.f_registers[rd] = nan_boxing(
+            F32::from_i64(self.registers[rs1] as i64, rm_to_swrm(rm).unwrap()).to_bits() as u64,
+        );
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn f_cvt_s_lu(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rm = extract_rm(instruction, self.read_csr(FRM)?);
+        let rs1 = extract_rs1(instruction);
+
+        let mut flag = ExceptionFlags::default();
+        flag.set();
+        self.f_registers[rd] = nan_boxing(
+            F32::from_u64(self.registers[rs1], rm_to_swrm(rm).unwrap()).to_bits() as u64,
+        );
+        flag.get();
+        let fflags = self.read_csr(FFLAGS)?;
+        self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
 
         self.progress_pc(self.pc.wrapping_add(4))
     }
@@ -2186,7 +2864,8 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_i32(self.registers[rs1] as i32, rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] =
+            F64::from_i32(self.registers[rs1] as i32, rm_to_swrm(rm).unwrap()).to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -2201,7 +2880,8 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_u32(self.registers[rs1] as u32, rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] =
+            F64::from_u32(self.registers[rs1] as u32, rm_to_swrm(rm).unwrap()).to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -2216,7 +2896,8 @@ impl Rv64SGEmulator {
 
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_i64(self.registers[rs1] as i64, rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] =
+            F64::from_i64(self.registers[rs1] as i64, rm_to_swrm(rm).unwrap()).to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -2228,10 +2909,11 @@ impl Rv64SGEmulator {
         let rd = extract_rd(instruction);
         let rm = extract_rm(instruction, self.read_csr(FRM)?);
         let rs1 = extract_rs1(instruction);
-        
+
         let mut flag = ExceptionFlags::default();
         flag.set();
-        self.f_registers[rd] = F64::from_u64(self.registers[rs1], rm_to_swrm(rm).unwrap()).to_bits();
+        self.f_registers[rd] =
+            F64::from_u64(self.registers[rs1], rm_to_swrm(rm).unwrap()).to_bits();
         flag.get();
         let fflags = self.read_csr(FFLAGS)?;
         self.write_csr(FFLAGS, fflags | swef_to_fflags(flag))?;
@@ -2250,15 +2932,71 @@ impl Rv64SGEmulator {
         self.progress_pc(self.pc.wrapping_add(4))
     }
 
+    fn f_class_s(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+
+        let mut class = 0;
+        let rs1_value = if is_nan_boxing(self.f_registers[rs1]) {
+            F32::from_bits(self.f_registers[rs1] as u32)
+        } else {
+            F32::quiet_nan()
+        };
+
+        if rs1_value.is_negative_infinity() {
+            class |= 0x1;
+        }
+
+        if rs1_value.is_negative_normal() {
+            class |= 0x2;
+        }
+
+        if rs1_value.is_negative_subnormal() {
+            class |= 0x4;
+        }
+
+        if rs1_value.is_negative_zero() {
+            class |= 0x8;
+        }
+
+        if rs1_value.is_positive_zero() {
+            class |= 0x10;
+        }
+
+        if rs1_value.is_positive_subnormal() {
+            class |= 0x20;
+        }
+
+        if rs1_value.is_positive_normal() {
+            class |= 0x40;
+        }
+
+        if rs1_value.is_positive_infinity() {
+            class |= 0x80;
+        }
+
+        if rs1_value.is_signaling_nan() {
+            class |= 0x100;
+        } else if rs1_value.is_nan() {
+            class |= 0x200;
+        }
+
+        if rd != 0 {
+            self.registers[rd] = class;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
     fn f_mv_x_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
-       let rd = extract_rd(instruction);
-       let rs1 = extract_rs1(instruction);
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
 
-       if rd != 0 {
-           self.registers[rd] = self.f_registers[rs1];
-       }
+        if rd != 0 {
+            self.registers[rd] = self.f_registers[rs1];
+        }
 
-       self.progress_pc(self.pc.wrapping_add(4))
+        self.progress_pc(self.pc.wrapping_add(4))
     }
 
     fn f_class_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
@@ -2428,15 +3166,15 @@ impl Rv64SGEmulator {
             FCSR => {
                 self.csrs[FCSR] = value & 0xff;
                 Some(())
-            },
+            }
             FRM => {
-                self.csrs[FCSR] = (self.csrs[FCSR] & 0x1f) + ((value & 0x7) >>5);
+                self.csrs[FCSR] = (self.csrs[FCSR] & 0x1f) + ((value & 0x7) << 5);
                 Some(())
-            },
+            }
             FFLAGS => {
                 self.csrs[FCSR] = (self.csrs[FCSR] & 0xe0) + (value & 0x1f);
                 Some(())
-            },
+            }
             M_STATUS => {
                 self.csrs[rv_csr] = value & 0x8000003f007fffea;
                 Some(())
