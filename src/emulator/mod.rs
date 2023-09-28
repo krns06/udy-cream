@@ -4,8 +4,6 @@ mod helpers;
 use std::{
     fs::File,
     io::{self, Read},
-    os::fd::IntoRawFd,
-    process::exit,
 };
 
 use softfloat_wrapper::{ExceptionFlags, Float, F32, F64};
@@ -16,7 +14,7 @@ use self::helpers::{
     extract_funct7, extract_imm_11_0, extract_imm_31_12, extract_offset_11_0,
     extract_offset_11_5_4_0, extract_offset_12_10_5_4_1_11, extract_rd, extract_rm, extract_rs1,
     extract_rs2, extract_rs3, extract_shamt, extract_zimm, is_nan_boxing, nan_boxing, rm_to_swrm,
-    swef_to_fflags, truncate_top_16bit, truncate_top_32bit, truncate_top_8bit,
+    swef_to_fflags, truncate_top_16bit, truncate_top_32bit,
 };
 
 pub struct Rv64SGEmulator {
@@ -181,6 +179,50 @@ impl Rv64SGEmulator {
                 3 => self.f_sd(&instruction),
                 funct3 => {
                     print_not_implement(format!("op: {:x} funct3: {:x}", 0x27, funct3));
+                    self.set_exception_cause(2)
+                }
+            },
+            0x2f => match extract_funct3(&instruction) {
+                2 => match instruction[3] >> 3 {
+                    0 => self.a_moadd_w(&instruction),
+                    0x1 => self.a_moswap_w(&instruction),
+                    0x2 => self.a_lr_w(&instruction),
+                    0x3 => self.a_sc_w(&instruction),
+                    0x4 => self.a_moxor_w(&instruction),
+                    0x8 => self.a_moor_w(&instruction),
+                    0xc => self.a_moand_w(&instruction),
+                    0x10 => self.a_momin_w(&instruction),
+                    0x14 => self.a_momax_w(&instruction),
+                    0x18 => self.a_mominu_w(&instruction),
+                    0x1c => self.a_momaxu_w(&instruction),
+                    b_27_31 => {
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 27-31bit: {:x}",
+                            0x2f, 2, b_27_31
+                        ));
+                        self.set_exception_cause(2)
+                    }
+                },
+                3 => match instruction[3] >> 3 {
+                    0 => self.a_moadd_d(&instruction),
+                    0x1 => self.a_moswap_d(&instruction),
+                    0x4 => self.a_moxor_d(&instruction),
+                    0x8 => self.a_moor_d(&instruction),
+                    0xc => self.a_moand_d(&instruction),
+                    0x10 => self.a_momin_d(&instruction),
+                    0x14 => self.a_momax_d(&instruction),
+                    0x18 => self.a_mominu_d(&instruction),
+                    0x1c => self.a_momaxu_d(&instruction),
+                    b_27_31 => {
+                        print_not_implement(format!(
+                            "op: {:x} funct3: {:x} 27-31bit: {:x}",
+                            0x2f, 3, b_27_31
+                        ));
+                        self.set_exception_cause(2)
+                    }
+                },
+                funct3 => {
+                    print_not_implement(format!("op: {:x} funct3: {:x}", 0x2f, funct3));
                     self.set_exception_cause(2)
                 }
             },
@@ -795,7 +837,7 @@ impl Rv64SGEmulator {
 
         if rd != 0 {
             self.registers[rd] = extend_sign_8bit(
-                (self.load_memory_8bit(self.registers[rs1].wrapping_add(offset) as usize)?),
+                self.load_memory_8bit(self.registers[rs1].wrapping_add(offset) as usize)?,
             );
         }
 
@@ -1417,7 +1459,7 @@ impl Rv64SGEmulator {
         }
     }
 
-    fn ecall(&mut self, instruction: &Vec<u8>) -> Option<()> {
+    fn ecall(&mut self, _: &Vec<u8>) -> Option<()> {
         let cause = match self.mode {
             MachineMode::U => 8,
             MachineMode::S => 9,
@@ -1432,7 +1474,7 @@ impl Rv64SGEmulator {
         let mut mstatus = self.read_csr(M_STATUS)?;
         mstatus = (mstatus & 0xfffffffffffffff7) | ((mstatus & 0x80) >> 4);
         mstatus = mstatus | 0x80;
-        let mode = ((mstatus & 0x1800) >> 11);
+        let mode = (mstatus & 0x1800) >> 11;
         mstatus = (mstatus & 0xffffffffffffe7ff) | ((MachineMode::U as u64) << 11);
         self.write_csr(M_STATUS, mstatus)?;
         self.mode = MachineMode::from_u64(mode).unwrap();
@@ -3064,6 +3106,382 @@ impl Rv64SGEmulator {
         let rs1 = extract_rs1(instruction);
 
         self.f_registers[rd] = self.registers[rs1];
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+}
+
+// Rv64a
+impl Rv64SGEmulator {
+    fn a_moadd_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_32bit(self.registers[rs1] as usize)?;
+        self.save_memory_32bit(
+            self.registers[rs1] as usize,
+            t.wrapping_add(truncate_top_32bit(self.registers[rs2])),
+        )?;
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(t);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_moswap_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_32bit(self.registers[rs1] as usize)?;
+        self.save_memory_32bit(
+            self.registers[rs1] as usize,
+            truncate_top_32bit(self.registers[rs2]),
+        )?;
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(t);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_lr_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+
+        if rd != 0 {
+            self.registers[rd] =
+                extend_sign_32bit(self.load_memory_32bit(self.registers[rs1] as usize)?);
+            self.preserved_memory = Some((
+                self.registers[rs1] as usize,
+                self.registers[rs1] as usize + 4,
+            ));
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_sc_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let flag = if let Some(preserved_memory) = self.preserved_memory {
+            if preserved_memory.0 <= self.registers[rs1] as usize
+                && preserved_memory.1 >= self.registers[rs1] as usize + 4
+            {
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if flag {
+            self.save_memory_32bit(self.registers[rs1] as usize, self.registers[rs2])?;
+        }
+
+        if rd != 0 {
+            if flag {
+                self.registers[rd] = 0;
+            } else {
+                self.registers[rd] = 1;
+            }
+        }
+        self.preserved_memory = None;
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_moxor_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_32bit(self.registers[rs1] as usize)?;
+        self.save_memory_32bit(
+            self.registers[rs1] as usize,
+            t ^ truncate_top_32bit(self.registers[rs2]),
+        )?;
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(t);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_moor_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_32bit(self.registers[rs1] as usize)?;
+        self.save_memory_32bit(
+            self.registers[rs1] as usize,
+            t | truncate_top_32bit(self.registers[rs2]),
+        )?;
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(t);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_moand_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_32bit(self.registers[rs1] as usize)?;
+        self.save_memory_32bit(
+            self.registers[rs1] as usize,
+            t & truncate_top_32bit(self.registers[rs2]),
+        )?;
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(t);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_momin_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_32bit(self.registers[rs1] as usize)?;
+
+        if truncate_top_32bit(self.registers[rs2]) as i32 > t as i32 {
+            self.save_memory_32bit(self.registers[rs1] as usize, t)?;
+        } else {
+            self.save_memory_32bit(self.registers[rs1] as usize, self.registers[rs2])?;
+        }
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(t);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_momax_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_32bit(self.registers[rs1] as usize)?;
+
+        if t as i32 > truncate_top_32bit(self.registers[rs2]) as i32 {
+            self.save_memory_32bit(self.registers[rs1] as usize, t)?;
+        } else {
+            self.save_memory_32bit(self.registers[rs1] as usize, self.registers[rs2])?;
+        }
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(t);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_mominu_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_32bit(self.registers[rs1] as usize)?;
+
+        if truncate_top_32bit(self.registers[rs2]) > t {
+            self.save_memory_32bit(self.registers[rs1] as usize, t)?;
+        } else {
+            self.save_memory_32bit(self.registers[rs1] as usize, self.registers[rs2])?;
+        }
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(t);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_momaxu_w(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_32bit(self.registers[rs1] as usize)?;
+
+        if t > truncate_top_32bit(self.registers[rs2]) {
+            self.save_memory_32bit(self.registers[rs1] as usize, t)?;
+        } else {
+            self.save_memory_32bit(self.registers[rs1] as usize, self.registers[rs2])?;
+        }
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(t);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_moadd_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_64bit(self.registers[rs1] as usize)?;
+        self.save_memory_64bit(
+            self.registers[rs1] as usize,
+            t.wrapping_add(self.registers[rs2]),
+        )?;
+
+        if rd != 0 {
+            self.registers[rd] = t;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_moswap_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_64bit(self.registers[rs1] as usize)?;
+        self.save_memory_64bit(self.registers[rs1] as usize, self.registers[rs2])?;
+
+        if rd != 0 {
+            self.registers[rd] = t;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_moxor_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_64bit(self.registers[rs1] as usize)?;
+        self.save_memory_64bit(self.registers[rs1] as usize, t ^ self.registers[rs2])?;
+
+        if rd != 0 {
+            self.registers[rd] = t;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_moor_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_64bit(self.registers[rs1] as usize)?;
+        self.save_memory_64bit(self.registers[rs1] as usize, t | self.registers[rs2])?;
+
+        if rd != 0 {
+            self.registers[rd] = t;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_moand_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_64bit(self.registers[rs1] as usize)?;
+        self.save_memory_64bit(self.registers[rs1] as usize, t & self.registers[rs2])?;
+
+        if rd != 0 {
+            self.registers[rd] = t;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_momin_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_64bit(self.registers[rs1] as usize)?;
+        if self.registers[rs2] as i64 > t as i64 {
+            self.save_memory_64bit(self.registers[rs1] as usize, t)?;
+        } else {
+            self.save_memory_64bit(self.registers[rs1] as usize, self.registers[rs2])?;
+        }
+
+        if rd != 0 {
+            self.registers[rd] = t;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_momax_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_64bit(self.registers[rs1] as usize)?;
+        if t as i64 > self.registers[rs2] as i64 {
+            self.save_memory_64bit(self.registers[rs1] as usize, t)?;
+        } else {
+            self.save_memory_64bit(self.registers[rs1] as usize, self.registers[rs2])?;
+        }
+
+        if rd != 0 {
+            self.registers[rd] = t;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_mominu_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_64bit(self.registers[rs1] as usize)?;
+        if self.registers[rs2] > t {
+            self.save_memory_64bit(self.registers[rs1] as usize, t)?;
+        } else {
+            self.save_memory_64bit(self.registers[rs1] as usize, self.registers[rs2])?;
+        }
+
+        if rd != 0 {
+            self.registers[rd] = t;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(4))
+    }
+
+    fn a_momaxu_d(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs1 = extract_rs1(instruction);
+        let rs2 = extract_rs2(instruction);
+
+        let t = self.load_memory_64bit(self.registers[rs1] as usize)?;
+        if t > self.registers[rs2] {
+            self.save_memory_64bit(self.registers[rs1] as usize, t)?;
+        } else {
+            self.save_memory_64bit(self.registers[rs1] as usize, self.registers[rs2])?;
+        }
+
+        if rd != 0 {
+            self.registers[rd] = t;
+        }
 
         self.progress_pc(self.pc.wrapping_add(4))
     }

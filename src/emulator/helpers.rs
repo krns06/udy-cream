@@ -94,10 +94,6 @@ pub fn truncate_top_16bit(value: u64) -> u64 {
     value & 0xffff
 }
 
-pub fn truncate_top_8bit(value: u64) -> u64 {
-    value & 0xff
-}
-
 // Rv64m
 pub fn extend_sign_128bit(value: u64) -> u128 {
     (value as u128 + 0x7fffffffffffffff8000000000000000) ^ 0x7fffffffffffffff8000000000000000

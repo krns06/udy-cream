@@ -119,4 +119,27 @@ mod tests {
         test_exec_program("rv64uf-p-move.bin", 0x4c, 0x1000, 1);
         test_exec_program("rv64uf-p-recoding.bin", 0x4c, 0x1000, 1);
     }
+
+    #[test]
+    fn rv64ua_p_all() {
+        test_exec_program("rv64ua-p-amoadd_d.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amoadd_w.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amoand_d.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amoand_w.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amomax_d.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amomax_w.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amomaxu_d.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amomaxu_w.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amomin_d.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amomin_w.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amominu_d.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amominu_w.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amoor_d.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amoor_w.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amoswap_d.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amoswap_w.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amoxor_d.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-amoxor_w.bin", 0x4c, 0x1000, 1);
+        test_exec_program("rv64ua-p-lrsc.bin", 0x4c, 0x1000, 1);
+    }
 }
