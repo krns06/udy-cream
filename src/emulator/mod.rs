@@ -9,9 +9,15 @@ use std::{
 use softfloat_wrapper::{ExceptionFlags, Float, F32, F64};
 
 use self::helpers::{
-    extend_sign_128bit, extend_sign_12bit, extend_sign_13bit, extend_sign_16bit, extend_sign_21bit,
-    extend_sign_32bit, extend_sign_8bit, extend_sign_n, extract_csr, extract_funct3,
-    extract_funct7, extract_imm_11_0, extract_imm_31_12, extract_offset_11_0,
+    c_extract_2_4_rd, c_extract_2_4_rs2, c_extract_2_6_rs2, c_extract_7_11_rs1, c_extract_7_9_rd,
+    c_extract_7_9_rs1, c_extract_imm_17_16_12, c_extract_imm_5_4_0, c_extract_imm_9_4_5_8_7_5,
+    c_extract_offset_11_4_9_8_10_6_7_3_1_5, c_extract_offset_8_4_3_7_6_2_1_5,
+    c_extract_uimm_5_2_7_6, c_extract_uimm_5_3_2_6, c_extract_uimm_5_3_7_6, c_extract_uimm_5_3_8_6,
+    c_extract_uimm_5_4_0, c_extract_uimm_5_4_2_7_6, c_extract_uimm_5_4_3_8_6,
+    c_extract_uimm_5_4_9_6_2_3, extend_sign_10bit, extend_sign_128bit, extend_sign_12bit,
+    extend_sign_13bit, extend_sign_16bit, extend_sign_18bit, extend_sign_21bit, extend_sign_32bit,
+    extend_sign_6bit, extend_sign_8bit, extend_sign_9bit, extend_sign_n, extract_csr,
+    extract_funct3, extract_funct7, extract_imm_11_0, extract_imm_31_12, extract_offset_11_0,
     extract_offset_11_5_4_0, extract_offset_12_10_5_4_1_11, extract_rd, extract_rm, extract_rs1,
     extract_rs2, extract_rs3, extract_shamt, extract_zimm, is_nan_boxing, nan_boxing, rm_to_swrm,
     swef_to_fflags, truncate_top_16bit, truncate_top_32bit,
@@ -72,6 +78,10 @@ impl Rv64SGEmulator {
     // またこの関数内で例外が発生した場合（不正な命令等）set_exception_causeに理由を引数にしてすぐに返す。
     // printlnとかはデバッグが終わったら消す。
     fn decode_and_exec(&mut self, instruction: Vec<u8>) -> Option<()> {
+        if self.c_decode_and_exec(&instruction)? {
+            return Some(());
+        }
+
         match instruction[0] & 0x7f {
             0x3 => match extract_funct3(&instruction) {
                 0 => self.lb(&instruction),
@@ -685,6 +695,143 @@ impl Rv64SGEmulator {
         }
     }
 
+    // C拡張版のdecode_and_run
+    // 命令の実行に成功した場合はSome(true)
+    // 命令の実行に失敗した場合またはC拡張のフォーマット(2bit)で存在しない命令の場合はNone
+    // 命令がC拡張でない場合はSome(false)を返す。
+    fn c_decode_and_exec(&mut self, instruction: &Vec<u8>) -> Option<bool> {
+        match instruction[0] & 0x3 {
+            0 => match instruction[1] >> 5 {
+                0 => match (instruction[0], instruction[1]) {
+                    (0, 0) => {
+                        self.set_exception_cause(2)?;
+                        return None;
+                    }
+                    _ => self.c_addi4spn(&instruction)?,
+                },
+                2 => self.c_lw(&instruction)?,
+                3 => self.c_ld(&instruction)?,
+                6 => self.c_sw(&instruction)?,
+                7 => self.c_sd(&instruction)?,
+                b_13_15 => {
+                    print_not_implement(format!("c_op: {:x} b_13_15: {}", 0, b_13_15));
+                    self.set_exception_cause(2)?;
+                    return None;
+                }
+            },
+            1 => {
+                match instruction[1] >> 5 {
+                    0 => match (instruction[0] >> 7).wrapping_add((instruction[1] & 0xf) << 1) {
+                        0 => self.c_nop(&instruction)?,
+                        _ => self.c_addi(&instruction)?,
+                    },
+                    1 => self.c_addiw(&instruction)?,
+                    2 => self.c_li(&instruction)?,
+                    3 => match (instruction[0] >> 7).wrapping_add((instruction[1] & 0xf) << 1) {
+                        2 => self.c_addi16sp(&instruction)?,
+                        _ => self.c_lui(&instruction)?,
+                    },
+                    4 => {
+                        match (instruction[1] & 0xc) >> 2 {
+                            0 => self.c_srli(&instruction)?,
+                            1 => self.c_srai(&instruction)?,
+                            2 => self.c_andi(&instruction)?,
+                            3 => {
+                                match (instruction[1] & 0x10) >> 4 {
+                                    0 => match (instruction[0] & 0x60) >> 5 {
+                                        0 => self.c_sub(&instruction)?,
+                                        1 => self.c_xor(&instruction)?,
+                                        2 => self.c_or(&instruction)?,
+                                        3 => self.c_and(&instruction)?,
+                                        b_5_6 => {
+                                            print_not_implement(format!("c_op: {:x} b_13_15: {} b_12: {} b_10_11: {} b_5_6: {}", 1, 4, 0, 3, b_5_6));
+                                            self.set_exception_cause(2)?;
+                                            return None;
+                                        }
+                                    },
+                                    _ => match (instruction[0] & 0x60) >> 5 {
+                                        0 => self.c_subw(&instruction)?,
+                                        1 => self.c_addw(&instruction)?,
+                                        b_5_6 => {
+                                            print_not_implement(format!("c_op: {:x} b_13_15: {} b_12: {} b_10_11: {} b_5_6: {}", 1, 4, 1, 3, b_5_6));
+                                            self.set_exception_cause(2)?;
+                                            return None;
+                                        }
+                                    },
+                                }
+                            }
+                            b_10_11 => {
+                                print_not_implement(format!(
+                                    "c_op: {:x} b_13_15: {} b_10_11: {}",
+                                    1, 4, b_10_11
+                                ));
+                                self.set_exception_cause(2)?;
+                                return None;
+                            }
+                        }
+                    }
+                    5 => self.c_j(&instruction)?,
+                    6 => self.c_beqz(&instruction)?,
+                    7 => self.c_bnez(&instruction)?,
+                    b_13_15 => {
+                        print_not_implement(format!("c_op: {:x} b_13_15: {}", 1, b_13_15));
+                        self.set_exception_cause(2)?;
+                        return None;
+                    }
+                }
+            }
+            2 => match instruction[1] >> 5 {
+                0 => self.c_slli(&instruction)?,
+                2 => self.c_lwsp(&instruction)?,
+                3 => self.c_ldsp(&instruction)?,
+                4 => match (instruction[1] & 0x10) >> 4 {
+                    0 => match (instruction[0] & 0x7c) >> 2 {
+                        0 => self.c_jr(&instruction)?,
+                        _ => self.c_mv(&instruction)?,
+                    },
+                    1 => match (instruction[0] & 0x7c) >> 2 {
+                        0 => match (instruction[0] >> 7) + ((instruction[1] & 0xf) << 1) {
+                            // 未実装
+                            0 => self.c_ebreak(&instruction)?,
+                            _ => self.c_jalr(&instruction)?,
+                            b_7_11 => {
+                                print_not_implement(format!(
+                                    "c_op: {:x} b_13_15: {} b_12: {} b_7_11: {} b_2_6: {}",
+                                    2, 4, 1, b_7_11, 0
+                                ));
+                                self.set_exception_cause(2)?;
+                                return None;
+                            }
+                        },
+                        _ => self.c_add(&instruction)?,
+                    },
+                    b_12 => {
+                        print_not_implement(format!("c_op: {:x} b_13_15: {} b_12: {}", 2, 4, b_12));
+                        self.set_exception_cause(2)?;
+                        return None;
+                    }
+                },
+                6 => self.c_swsp(&instruction)?,
+                7 => self.c_sdsp(&instruction)?,
+                b_13_15 => {
+                    print_not_implement(format!("c_op: {:x} b_13_15: {}", 2, b_13_15));
+                    self.set_exception_cause(2)?;
+                    return None;
+                }
+            },
+            3 => {
+                return Some(false);
+            }
+            c_op => {
+                print_not_implement(format!("c_op: {:x}", c_op));
+                self.set_exception_cause(2)?;
+                return None;
+            }
+        }
+
+        Some(true)
+    }
+
     // address + sizeがメモリの大きさを超えるか判定する関数
     // 超えた場合にtrue 超えなかった場合はfalseを返す。
     fn is_over_memory(&mut self, address: usize, size: usize) -> bool {
@@ -715,7 +862,7 @@ impl Rv64SGEmulator {
             }
 
             if self.is_exit(end_point) {
-                println!("0x1000: {:x}", self.memory[0x1000]);
+                println!("0x3000: {:x}", self.memory[0x3000]);
                 return;
             }
         }
@@ -3484,6 +3631,341 @@ impl Rv64SGEmulator {
         }
 
         self.progress_pc(self.pc.wrapping_add(4))
+    }
+}
+
+// Rv64c
+impl Rv64SGEmulator {
+    fn c_addi4spn(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_2_4_rd(instruction);
+        let uimm = c_extract_uimm_5_4_9_6_2_3(instruction);
+
+        self.registers[rd + 8] = self.registers[2].wrapping_add(uimm);
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_lw(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_2_4_rd(instruction);
+        let rs1 = c_extract_7_9_rs1(instruction);
+        let uimm = c_extract_uimm_5_3_2_6(instruction);
+
+        self.registers[rd + 8] = extend_sign_32bit(
+            self.load_memory_32bit(self.registers[rs1 + 8].wrapping_add(uimm) as usize)?,
+        );
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_ld(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_2_4_rd(instruction);
+        let rs1 = c_extract_7_9_rs1(instruction);
+        let uimm = c_extract_uimm_5_3_7_6(instruction);
+
+        self.registers[rd + 8] =
+            self.load_memory_64bit(self.registers[rs1 + 8].wrapping_add(uimm) as usize)?;
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_sw(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rs1 = c_extract_7_9_rs1(instruction);
+        let rs2 = c_extract_2_4_rs2(instruction);
+        let uimm = c_extract_uimm_5_3_2_6(instruction);
+
+        self.save_memory_32bit(
+            self.registers[rs1 + 8].wrapping_add(uimm) as usize,
+            self.registers[rs2 + 8],
+        )?;
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_sd(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rs1 = c_extract_7_9_rs1(instruction);
+        let rs2 = c_extract_2_4_rs2(instruction);
+        let uimm = c_extract_uimm_5_3_7_6(instruction);
+
+        self.save_memory_64bit(
+            self.registers[rs1 + 8].wrapping_add(uimm) as usize,
+            self.registers[rs2 + 8],
+        )?;
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_nop(&mut self, _: &Vec<u8>) -> Option<()> {
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_addi(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let imm = extend_sign_6bit(c_extract_imm_5_4_0(instruction));
+
+        if rd != 0 {
+            self.registers[rd] = self.registers[rd].wrapping_add(imm);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_addiw(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let imm = extend_sign_6bit(c_extract_imm_5_4_0(instruction));
+
+        if rd != 0 {
+            self.registers[rd] =
+                extend_sign_32bit(truncate_top_32bit(self.registers[rd].wrapping_add(imm)));
+        }
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_li(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let imm = c_extract_imm_5_4_0(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_6bit(imm);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_addi16sp(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let imm = extend_sign_10bit(c_extract_imm_9_4_5_8_7_5(instruction));
+
+        self.registers[2] = self.registers[2].wrapping_add(imm);
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_lui(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let imm = extend_sign_18bit(c_extract_imm_17_16_12(instruction));
+
+        if rd != 0 {
+            self.registers[rd] = imm;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_srli(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_7_9_rd(instruction);
+        let uimm = c_extract_uimm_5_4_0(instruction);
+
+        self.registers[rd + 8] = self.registers[rd + 8] >> uimm;
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_srai(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_7_9_rd(instruction);
+        let uimm = c_extract_uimm_5_4_0(instruction);
+
+        self.registers[rd + 8] = extend_sign_n(self.registers[rd + 8] >> uimm, 63 - uimm);
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_andi(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_7_9_rd(instruction);
+        let imm = extend_sign_6bit(c_extract_imm_5_4_0(instruction));
+
+        self.registers[rd + 8] = self.registers[rd + 8] & imm;
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_sub(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_7_9_rd(instruction);
+        let rs2 = c_extract_2_4_rs2(instruction);
+
+        self.registers[rd + 8] = self.registers[rd + 8].wrapping_sub(self.registers[rs2 + 8]);
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_xor(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_7_9_rd(instruction);
+        let rs2 = c_extract_2_4_rs2(instruction);
+
+        self.registers[rd + 8] = self.registers[rd + 8] ^ self.registers[rs2 + 8];
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_or(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_7_9_rd(instruction);
+        let rs2 = c_extract_2_4_rs2(instruction);
+
+        self.registers[rd + 8] = self.registers[rd + 8] | self.registers[rs2 + 8];
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_and(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_7_9_rd(instruction);
+        let rs2 = c_extract_2_4_rs2(instruction);
+
+        self.registers[rd + 8] = self.registers[rd + 8] & self.registers[rs2 + 8];
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_subw(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_7_9_rd(instruction);
+        let rs2 = c_extract_2_4_rs2(instruction);
+
+        self.registers[rd + 8] = extend_sign_32bit(truncate_top_32bit(
+            self.registers[rd + 8].wrapping_sub(self.registers[rs2 + 8]),
+        ));
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_addw(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = c_extract_7_9_rd(instruction);
+        let rs2 = c_extract_2_4_rs2(instruction);
+
+        self.registers[rd + 8] = extend_sign_32bit(truncate_top_32bit(
+            self.registers[rd + 8].wrapping_add(self.registers[rs2 + 8]),
+        ));
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_j(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let offset = extend_sign_12bit(c_extract_offset_11_4_9_8_10_6_7_3_1_5(instruction));
+
+        self.progress_pc(self.pc.wrapping_add(offset))
+    }
+
+    fn c_beqz(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rs1 = c_extract_7_9_rs1(instruction);
+        let offset = extend_sign_9bit(c_extract_offset_8_4_3_7_6_2_1_5(instruction));
+
+        if self.registers[rs1 + 8] == 0 {
+            self.progress_pc(self.pc.wrapping_add(offset))
+        } else {
+            self.progress_pc(self.pc.wrapping_add(2))
+        }
+    }
+
+    fn c_bnez(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rs1 = c_extract_7_9_rs1(instruction);
+        let offset = extend_sign_9bit(c_extract_offset_8_4_3_7_6_2_1_5(instruction));
+
+        if self.registers[rs1 + 8] != 0 {
+            self.progress_pc(self.pc.wrapping_add(offset))
+        } else {
+            self.progress_pc(self.pc.wrapping_add(2))
+        }
+    }
+
+    fn c_slli(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let uimm = c_extract_uimm_5_4_0(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = self.registers[rd] << uimm;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_lwsp(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let uimm = c_extract_uimm_5_4_2_7_6(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = extend_sign_32bit(
+                self.load_memory_32bit(self.registers[2].wrapping_add(uimm) as usize)?,
+            );
+        }
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_ldsp(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let uimm = c_extract_uimm_5_4_3_8_6(instruction);
+
+        if rd != 0 {
+            self.registers[rd] =
+                self.load_memory_64bit(self.registers[2].wrapping_add(uimm) as usize)?;
+        }
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_jr(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rs1 = c_extract_7_11_rs1(instruction);
+
+        self.progress_pc(self.registers[rs1])
+    }
+
+    fn c_mv(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs2 = c_extract_2_6_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = self.registers[rs2];
+        }
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    // 未実装
+    fn c_ebreak(&mut self, _: &Vec<u8>) -> Option<()> {
+        None
+    }
+
+    fn c_jalr(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rs1 = c_extract_7_11_rs1(instruction);
+
+        let t = self.pc.wrapping_add(2);
+        self.progress_pc(self.registers[rs1])?;
+        self.registers[1] = t;
+        Some(())
+    }
+
+    fn c_add(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rd = extract_rd(instruction);
+        let rs2 = c_extract_2_6_rs2(instruction);
+
+        if rd != 0 {
+            self.registers[rd] = self.registers[rd].wrapping_add(self.registers[rs2]);
+        }
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_swsp(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rs2 = c_extract_2_6_rs2(instruction);
+        let uimm = c_extract_uimm_5_2_7_6(instruction);
+
+        self.save_memory_32bit(
+            self.registers[2].wrapping_add(uimm) as usize,
+            self.registers[rs2],
+        )?;
+
+        self.progress_pc(self.pc.wrapping_add(2))
+    }
+
+    fn c_sdsp(&mut self, instruction: &Vec<u8>) -> Option<()> {
+        let rs2 = c_extract_2_6_rs2(instruction);
+        let uimm = c_extract_uimm_5_3_8_6(instruction);
+
+        println!("uimm: {:x}", uimm);
+        println!("sp: {:x}", self.registers[2]);
+
+        self.save_memory_64bit(
+            self.registers[2].wrapping_add(uimm) as usize,
+            self.registers[rs2],
+        )?;
+
+        self.progress_pc(self.pc.wrapping_add(2))
     }
 }
 

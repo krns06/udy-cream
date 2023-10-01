@@ -166,3 +166,125 @@ pub fn is_nan_boxing(value: u64) -> bool {
         false
     }
 }
+
+// Rv64c
+pub fn c_extract_2_4_rd(instruction: &Vec<u8>) -> usize {
+    ((instruction[0] & 0x1c) >> 2) as usize
+}
+
+pub fn c_extract_7_9_rd(instruction: &Vec<u8>) -> usize {
+    c_extract_7_9_rs1(instruction)
+}
+
+pub fn c_extract_7_9_rs1(instruction: &Vec<u8>) -> usize {
+    (((instruction[1] & 0x3) << 1) + (instruction[0] >> 7)) as usize
+}
+
+pub fn c_extract_7_11_rs1(instruction: &Vec<u8>) -> usize {
+    ((instruction[1] as usize & 0xf) << 1) + (instruction[0] as usize >> 7)
+}
+
+pub fn c_extract_2_4_rs2(instruction: &Vec<u8>) -> usize {
+    c_extract_2_4_rd(instruction)
+}
+
+pub fn c_extract_2_6_rs2(instruction: &Vec<u8>) -> usize {
+    ((instruction[0] & 0x7c) >> 2) as usize
+}
+
+pub fn c_extract_uimm_5_2_7_6(instruction: &Vec<u8>) -> u64 {
+    (((instruction[1] as u64) & 0x1) << 7)
+        + (((instruction[0] as u64) & 0x80) >> 1)
+        + (((instruction[1] as u64) & 0x1e) << 1)
+}
+
+pub fn c_extract_uimm_5_3_2_6(instruction: &Vec<u8>) -> u64 {
+    (((instruction[0] as u64) & 0x20) << 1)
+        + (((instruction[1] as u64) & 0x1c) << 1)
+        + (((instruction[0] as u64) & 0x40) >> 4)
+}
+
+pub fn c_extract_uimm_5_3_8_6(instruction: &Vec<u8>) -> u64 {
+    (((instruction[1] as u64) & 0x3) << 7)
+        + (((instruction[0] as u64) & 0x80) >> 1)
+        + (((instruction[1] as u64) & 0x1c) << 1)
+}
+
+pub fn c_extract_uimm_5_4_3_8_6(instruction: &Vec<u8>) -> u64 {
+    (((instruction[0] as u64) & 0x1c) << 4)
+        + (((instruction[1] as u64) & 0x10) << 1)
+        + (((instruction[0] as u64) & 0x60) >> 2)
+}
+
+pub fn c_extract_uimm_5_4_0(instruction: &Vec<u8>) -> u64 {
+    (((instruction[1] as u64) & 0x10) << 1) + (((instruction[0] as u64) & 0x7c) >> 2)
+}
+
+pub fn c_extract_uimm_5_3_7_6(instruction: &Vec<u8>) -> u64 {
+    (((instruction[0] as u64) & 0x60) << 2) + (((instruction[1] as u64) & 0x1c) << 2)
+}
+
+pub fn c_extract_uimm_5_4_2_7_6(instruction: &Vec<u8>) -> u64 {
+    (((instruction[0] as u64) & 0xc) << 4)
+        + (((instruction[1] as u64) & 0x10) << 1)
+        + (((instruction[0] as u64) & 0x70) >> 2)
+}
+
+pub fn c_extract_uimm_5_4_9_6_2_3(instruction: &Vec<u8>) -> u64 {
+    (((instruction[1] as u64) & 0x7) << 7)
+        + (((instruction[0] as u64) & 0x80) >> 1)
+        + (((instruction[1] as u64) & 0x18) << 1)
+        + (((instruction[0] as u64) & 0x20) >> 2)
+        + (((instruction[0] as u64) & 0x40) >> 4)
+}
+
+pub fn c_extract_imm_5_4_0(instruction: &Vec<u8>) -> u64 {
+    (((instruction[1] as u64) & 0x10) << 1) + (((instruction[0] as u64) & 0x7c) >> 2)
+}
+
+pub fn c_extract_imm_17_16_12(instruction: &Vec<u8>) -> u64 {
+    (((instruction[1] as u64) & 0x10) << 13) + (((instruction[0] as u64) & 0x7c) << 10)
+}
+
+pub fn c_extract_imm_9_4_5_8_7_5(instruction: &Vec<u8>) -> u64 {
+    (((instruction[1] as u64) & 0x10) << 5)
+        + (((instruction[0] as u64) & 0x18) << 4)
+        + (((instruction[0] as u64) & 0x20) << 1)
+        + (((instruction[0] as u64) & 0x4) << 3)
+        + (((instruction[0] as u64) & 0x40) >> 2)
+}
+
+pub fn c_extract_offset_8_4_3_7_6_2_1_5(instruction: &Vec<u8>) -> u64 {
+    (((instruction[1] as u64) & 0x10) << 4)
+        + (((instruction[0] as u64) & 0x60) << 1)
+        + (((instruction[0] as u64) & 0x4) << 3)
+        + (((instruction[1] as u64) & 0xc) << 2)
+        + (((instruction[0] as u64) & 0x18) >> 2)
+}
+
+pub fn c_extract_offset_11_4_9_8_10_6_7_3_1_5(instruction: &Vec<u8>) -> u64 {
+    (((instruction[1] as u64) & 0x10) << 7)
+        + (((instruction[1] as u64) & 0x1) << 10)
+        + (((instruction[1] as u64) & 0x6) << 7)
+        + (((instruction[0] as u64) & 0x40) << 1)
+        + (((instruction[0] as u64) & 0x80) >> 1)
+        + (((instruction[0] as u64) & 0x4) << 3)
+        + (((instruction[1] as u64) & 0x8) << 1)
+        + (((instruction[0] as u64) & 0x18) >> 2)
+}
+
+pub fn extend_sign_6bit(value: u64) -> u64 {
+    (value + 0x7fffffffffffffe0) ^ 0x7fffffffffffffe0
+}
+
+pub fn extend_sign_9bit(value: u64) -> u64 {
+    (value + 0x7ffffffffffffe00) ^ 0x7ffffffffffffe00
+}
+
+pub fn extend_sign_10bit(value: u64) -> u64 {
+    (value + 0x7ffffffffffffe00) ^ 0x7ffffffffffffe00
+}
+
+pub fn extend_sign_18bit(value: u64) -> u64 {
+    (value + 0x7fffffffffff2000) ^ 0x7fffffffffff2000
+}

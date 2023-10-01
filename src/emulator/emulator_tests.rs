@@ -142,4 +142,9 @@ mod tests {
         test_exec_program("rv64ua-p-amoxor_w.bin", 0x4c, 0x1000, 1);
         test_exec_program("rv64ua-p-lrsc.bin", 0x4c, 0x1000, 1);
     }
+
+    #[test]
+    fn rv64uc_p_rvc() {
+        test_exec_program("rv64uc-p-rvc.bin", 0x4c, 0x3000, 1);
+    }
 }
